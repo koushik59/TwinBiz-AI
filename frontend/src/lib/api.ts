@@ -1,4 +1,21 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const LOCAL_API_BASE = "http://localhost:8000";
+const DEPLOYED_API_BASE = "https://twinbiz-ai.onrender.com";
+
+function getApiBase() {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window === "undefined") return LOCAL_API_BASE;
+
+  const hostname = window.location.hostname;
+  const isLocal =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname.endsWith(".local");
+
+  return isLocal ? LOCAL_API_BASE : DEPLOYED_API_BASE;
+}
+
+const API_BASE = getApiBase();
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
