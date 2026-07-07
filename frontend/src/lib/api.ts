@@ -2,8 +2,9 @@ const LOCAL_API_BASE = "http://localhost:8000";
 const DEPLOYED_API_BASE = "https://twinbiz-ai.onrender.com";
 
 function getApiBase() {
-  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
-  if (typeof window === "undefined") return LOCAL_API_BASE;
+  if (typeof window === "undefined") {
+    return (process.env.NEXT_PUBLIC_API_URL ?? LOCAL_API_BASE).replace(/\/api\/?$/, "");
+  }
 
   const hostname = window.location.hostname;
   const isLocal =
