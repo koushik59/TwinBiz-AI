@@ -6,6 +6,7 @@ from ..database import get_db
 from ..models import Business, Employee, Product, Supplier, User
 from ..security import get_current_business, get_current_user
 from ..seed import seed_business
+from ..services.insights import twin_status
 
 router = APIRouter(prefix="/api/business", tags=["business"])
 
@@ -21,14 +22,9 @@ class BusinessIn(BaseModel):
     working_hours: str = "9:00-21:00"
 
 
-class ProductIn(BaseModel):
-    name: str
-    category: str = "General"
-    price: float
-    cost: float
-    stock: int = 50
-    reorder_level: int = 15
-    daily_demand: float = 5
+class BusinessCreate(BusinessIn):
+    # "demo" seeds a labeled 365-day synthetic twin; "manual"/"upload" start empty
+    start_mode: str = "demo"
 
 
 def _business_out(b: Business) -> dict:
@@ -37,18 +33,21 @@ def _business_out(b: Business) -> dict:
         "employees_count": b.employees_count, "monthly_revenue": b.monthly_revenue,
         "monthly_expenses": b.monthly_expenses, "customer_count": b.customer_count,
         "working_hours": b.working_hours, "currency": b.currency,
+        "data_source": b.data_source,
     }
 
 
 @router.post("")
-def create_business(body: BusinessIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_business(body: BusinessCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if db.query(Business).filter(Business.owner_id == user.id).count() >= 3:
         raise HTTPException(status_code=400, detail="Business limit reached")
-    business = Business(owner_id=user.id, **body.model_dump())
+    business = Business(owner_id=user.id, **body.model_dump(exclude={"start_mode"}))
+    business.data_source = "demo" if body.start_mode == "demo" else "real"
     db.add(business)
     db.commit()
     db.refresh(business)
-    seed_business(db, business)  # generate 365 days of twin history instantly
+    if body.start_mode == "demo":
+        seed_business(db, business)  # 365 days of clearly-labeled synthetic twin history
     return _business_out(business)
 
 
@@ -74,6 +73,7 @@ def twin_snapshot(business: Business = Depends(get_current_business), db: Sessio
     suppliers = db.query(Supplier).filter(Supplier.business_id == business.id).all()
     return {
         "business": _business_out(business),
+        "twin_status": twin_status(db, business),
         "products": [
             {
                 "id": p.id, "name": p.name, "category": p.category, "price": p.price, "cost": p.cost,
@@ -101,33 +101,3 @@ def twin_snapshot(business: Business = Depends(get_current_business), db: Sessio
     }
 
 
-@router.post("/products")
-def add_product(body: ProductIn, business: Business = Depends(get_current_business),
-                db: Session = Depends(get_db)):
-    p = Product(business_id=business.id, **body.model_dump())
-    db.add(p)
-    db.commit()
-    return {"id": p.id}
-
-
-@router.put("/products/{product_id}")
-def update_product(product_id: int, body: ProductIn,
-                   business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
-    p = db.get(Product, product_id)
-    if not p or p.business_id != business.id:
-        raise HTTPException(status_code=404, detail="Product not found")
-    for k, v in body.model_dump().items():
-        setattr(p, k, v)
-    db.commit()
-    return {"ok": True}
-
-
-@router.delete("/products/{product_id}")
-def delete_product(product_id: int, business: Business = Depends(get_current_business),
-                   db: Session = Depends(get_db)):
-    p = db.get(Product, product_id)
-    if not p or p.business_id != business.id:
-        raise HTTPException(status_code=404, detail="Product not found")
-    db.delete(p)
-    db.commit()
-    return {"ok": True}

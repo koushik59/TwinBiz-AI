@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 type Rec = {
   title: string; reason: string; expected_benefit: string;
   priority: "high" | "medium" | "low"; est_revenue_uplift: number; uplift_pct: number;
+  confidence_pct?: number;
 };
 
 export default function RecommendationsPage() {
@@ -42,7 +43,10 @@ export default function RecommendationsPage() {
                   <div className="rounded-xl bg-brand-soft p-2 text-brand"><Sparkles size={16} /></div>
                   <p className="font-semibold leading-snug">{r.title}</p>
                 </div>
-                <Badge tone={r.priority === "high" ? "critical" : r.priority === "medium" ? "medium" : "low"}>{r.priority} priority</Badge>
+                <span className="flex shrink-0 flex-col items-end gap-1">
+                  <Badge tone={r.priority === "high" ? "critical" : r.priority === "medium" ? "medium" : "low"}>{r.priority} priority</Badge>
+                  {r.confidence_pct !== undefined && <span className="text-[10px] text-muted">confidence {r.confidence_pct}%</span>}
+                </span>
               </div>
               <p className="mt-3 text-sm leading-relaxed text-ink-2"><span className="font-medium text-ink">Why:</span> {r.reason}</p>
               <p className="mt-2 text-sm leading-relaxed text-ink-2"><span className="font-medium text-ink">Benefit:</span> {r.expected_benefit}</p>

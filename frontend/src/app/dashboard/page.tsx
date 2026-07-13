@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 type Dashboard = {
   kpis: Record<string, number>;
   health: { overall: number; pillars: Record<string, number> };
+  twin_status?: { status: string; data_source: string; last_sync: string | null; history_days: number; data_quality_pct: number; confidence_pct: number };
   trend: { day: string; revenue: number; expenses: number; profit: number; customers: number; orders: number }[];
   weekly_trend: { week: string; revenue: number; expenses: number; profit: number; customers: number }[];
   top_products: { name: string; units: number; revenue: number }[];
@@ -47,6 +48,21 @@ export default function DashboardPage() {
   return (
     <AppShell title="Dashboard">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
+        {/* twin status strip */}
+        {data.twin_status && (
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+            <Badge tone={data.twin_status.status === "LIVE" ? "good" : data.twin_status.status === "DEMO" ? "brand" : "critical"}>
+              Twin: {data.twin_status.status}{data.twin_status.status === "DEMO" ? " DATA" : ""}
+            </Badge>
+            <span>Last sync {data.twin_status.last_sync ?? "—"}</span>
+            <span>· {num(data.twin_status.history_days)} days of history</span>
+            <span>· Data quality {data.twin_status.data_quality_pct}%</span>
+            <span>· Twin confidence {data.twin_status.confidence_pct}%</span>
+            {data.twin_status.status === "DEMO" && (
+              <Link href="/data-center" className="font-medium text-brand hover:underline">Import real data →</Link>
+            )}
+          </div>
+        )}
         {/* KPI row */}
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           <StatTile label="Monthly Revenue" value={inr(k.monthly_revenue)} delta={k.revenue_change_pct} icon={Wallet} />

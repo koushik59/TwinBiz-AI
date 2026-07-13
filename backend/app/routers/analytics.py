@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Business, DailyMetric, Product, ProductSale
 from ..security import get_current_business
-from ..services.insights import compute_kpis, health_score
+from ..services.insights import compute_kpis, health_score, twin_status
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -73,6 +73,7 @@ def dashboard(business: Business = Depends(get_current_business), db: Session = 
     return {
         "kpis": kpis,
         "health": health,
+        "twin_status": twin_status(db, business),
         "trend": trend,
         "weekly_trend": weekly_trend,
         "top_products": [{"name": n, "units": int(u or 0), "revenue": float(r or 0)} for n, u, r in top],
@@ -148,6 +149,36 @@ def customers(business: Business = Depends(get_current_business), db: Session = 
     avg_ticket = rev / max(sum(r.orders for r in last30), 1)
     visits_per_customer = total / max(business.customer_count, 1)
     clv = avg_ticket * visits_per_customer * 12  # 12-month horizon
+
+    # ---- aggregate segment estimate (no individual customer records) -------
+    # Shares are derived from retention and new-customer mix; clearly labeled
+    # in the UI as "aggregate estimate", never per-person predictions.
+    ret_frac = retention / 100
+    churn_frac = 1 - ret_frac
+    segments = [
+        {"name": "Loyal", "share_pct": round(ret_frac * 42, 1),
+         "behaviour": "Visit weekly+, low price sensitivity, first to adopt new products"},
+        {"name": "Regular", "share_pct": round(ret_frac * 34, 1),
+         "behaviour": "Visit 1-2×/month, moderate price sensitivity"},
+        {"name": "Occasional", "share_pct": round(ret_frac * 24, 1),
+         "behaviour": "Irregular visits, respond mainly to offers"},
+        {"name": "New", "share_pct": round(new / total * 100, 1),
+         "behaviour": "First 30 days — retention decided by first 2-3 experiences"},
+        {"name": "At Risk", "share_pct": round(min(churn_frac * 55, 30), 1),
+         "behaviour": "Declining visit frequency — win back with targeted offers"},
+    ]
+
+    # elasticity-grounded behaviour predictions at the aggregate level
+    from ..services.simulation import PRICE_ELASTICITY
+    elasticity = PRICE_ELASTICITY.get(business.business_type, -1.5)
+    predictions = {
+        "return_probability_pct": round(ret_frac * 100 * 0.92, 0),
+        "discount_response": f"A 10% offer is predicted to lift demand ~{abs(elasticity) * 8 * 0.8:.0f}%",
+        "price_increase_response": f"A 5% price rise is predicted to cost ~{abs(elasticity) * 5:.0f}% of demand",
+        "new_product_adoption_pct": round(28 + ret_frac * 30, 0),
+        "label": ("Aggregate estimate from daily footfall history — "
+                  "no individual customer records are used."),
+    }
     return {
         "trend": trend,
         "summary": {
@@ -155,4 +186,6 @@ def customers(business: Business = Depends(get_current_business), db: Session = 
             "retention_pct": retention, "churn_pct": round(100 - retention, 1),
             "avg_ticket": round(avg_ticket, 0), "clv": round(clv, 0),
         },
+        "segments": segments,
+        "predictions": predictions,
     }

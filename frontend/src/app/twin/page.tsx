@@ -15,8 +15,13 @@ type TwinProduct = {
 };
 type TwinEmployee = { id: number; name: string; role: string; salary: number; department: string; performance: number };
 type TwinSupplier = { id: number; name: string; category: string; reliability: number; lead_time_days: number; cost_index: number };
+type TwinStatus = {
+  status: string; data_source: string; last_sync: string | null;
+  history_days: number; data_quality_pct: number; confidence_pct: number;
+};
 type Twin = {
   business: { name: string; business_type: string; location: string; employees_count: number; monthly_revenue: number; monthly_expenses: number; working_hours: string };
+  twin_status: TwinStatus;
   products: TwinProduct[];
   employees: TwinEmployee[];
   suppliers: TwinSupplier[];
@@ -53,9 +58,20 @@ export default function TwinPage() {
 
   return (
     <AppShell title="Digital Twin">
-      <p className="mb-4 text-sm text-ink-2">
-        A live virtual replica of <strong className="text-ink">{twin.business.name}</strong>. Click any shelf, employee or supplier to inspect its live metrics.
-      </p>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <p className="text-sm text-ink-2">
+          A live virtual replica of <strong className="text-ink">{twin.business.name}</strong>. Click any shelf, employee or supplier to inspect its live metrics.
+        </p>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Badge tone={twin.twin_status.status === "LIVE" ? "good" : twin.twin_status.status === "DEMO" ? "brand" : "critical"}>
+            <span className={cn("mr-0.5 inline-block h-1.5 w-1.5 rounded-full", twin.twin_status.status === "STALE" ? "bg-critical" : "bg-current animate-pulse")} />
+            {twin.twin_status.status}{twin.twin_status.status === "DEMO" ? " DATA" : ""}
+          </Badge>
+          <span className="text-[11px] text-muted">Last sync {twin.twin_status.last_sync ?? "—"}</span>
+          <span className="text-[11px] text-muted">· Data quality {twin.twin_status.data_quality_pct}%</span>
+          <span className="text-[11px] text-muted">· Twin confidence {twin.twin_status.confidence_pct}%</span>
+        </div>
+      </div>
       <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
         <div className="space-y-5">
           {/* store layout: departments as shelves */}

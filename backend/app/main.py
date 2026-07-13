@@ -2,9 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .database import Base, SessionLocal, engine
+from .database import Base, SessionLocal, engine, migrate_additive_columns
 from .models import Business, User
-from .routers import analytics, auth, business, insights_router, simulate
+from .routers import (analytics, auth, business, data_center, experiments,
+                      insights_router, products, simulate)
 from .security import hash_password
 from .seed import seed_business
 
@@ -21,6 +22,9 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(business.router)
+app.include_router(products.router)
+app.include_router(data_center.router)
+app.include_router(experiments.router)
 app.include_router(analytics.router)
 app.include_router(simulate.router)
 app.include_router(insights_router.router)
@@ -34,6 +38,7 @@ def healthz():
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
+    migrate_additive_columns()
     _ensure_demo_account()
 
 
@@ -49,7 +54,7 @@ def _ensure_demo_account():
         db.commit()
         db.refresh(user)
         biz = Business(
-            owner_id=user.id, name="FreshMart Supermarket", business_type="Supermarket",
+            owner_id=user.id, name="SmartMart Supermarket", business_type="Supermarket",
             location="Hyderabad, Telangana", employees_count=8, monthly_revenue=850000,
             monthly_expenses=690000, customer_count=2400, working_hours="8:00-22:00",
         )

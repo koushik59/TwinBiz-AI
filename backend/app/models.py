@@ -33,6 +33,8 @@ class Business(Base):
     customer_count: Mapped[int] = mapped_column(Integer, default=1200)
     working_hours: Mapped[str] = mapped_column(String(50), default="9:00-21:00")
     currency: Mapped[str] = mapped_column(String(10), default="₹")
+    # "demo" = seeded synthetic history, "real" = user data, "mixed" = both
+    data_source: Mapped[str] = mapped_column(String(20), default="demo")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     owner: Mapped[User] = relationship(back_populates="businesses")
@@ -50,12 +52,34 @@ class Product(Base):
     business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
     name: Mapped[str] = mapped_column(String(255))
     category: Mapped[str] = mapped_column(String(100), default="General")
-    price: Mapped[float] = mapped_column(Float, default=100.0)
-    cost: Mapped[float] = mapped_column(Float, default=70.0)
+    price: Mapped[float] = mapped_column(Float, default=100.0)   # current selling price
+    cost: Mapped[float] = mapped_column(Float, default=70.0)     # cost price
     stock: Mapped[int] = mapped_column(Integer, default=100)
-    reorder_level: Mapped[int] = mapped_column(Integer, default=30)
+    reorder_level: Mapped[int] = mapped_column(Integer, default=30)  # reorder point
     daily_demand: Mapped[float] = mapped_column(Float, default=10.0)
-    expiry_days: Mapped[int] = mapped_column(Integer, default=0)  # 0 = non-perishable
+    expiry_days: Mapped[int] = mapped_column(Integer, default=0)  # shelf life; 0 = non-perishable
+
+    # -- extended catalog fields (nullable → additive SQLite migration) ------
+    sku: Mapped[str | None] = mapped_column(String(64), default=None)
+    barcode: Mapped[str | None] = mapped_column(String(64), default=None)
+    brand: Mapped[str | None] = mapped_column(String(100), default=None)
+    subcategory: Mapped[str | None] = mapped_column(String(100), default=None)
+    description: Mapped[str | None] = mapped_column(Text, default=None)
+    unit_type: Mapped[str | None] = mapped_column(String(30), default=None)   # pcs/kg/L/pack
+    unit_size: Mapped[str | None] = mapped_column(String(50), default=None)   # "500ml", "1kg"
+    mrp: Mapped[float | None] = mapped_column(Float, default=None)
+    tax_rate: Mapped[float | None] = mapped_column(Float, default=None)       # GST %
+    min_stock: Mapped[int | None] = mapped_column(Integer, default=None)
+    max_stock: Mapped[int | None] = mapped_column(Integer, default=None)
+    safety_stock: Mapped[int | None] = mapped_column(Integer, default=None)
+    reorder_qty: Mapped[int | None] = mapped_column(Integer, default=None)
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"), default=None)
+    supplier_cost: Mapped[float | None] = mapped_column(Float, default=None)
+    lead_time_days: Mapped[int | None] = mapped_column(Integer, default=None)
+    moq: Mapped[int | None] = mapped_column(Integer, default=None)            # min order qty
+    storage_type: Mapped[str | None] = mapped_column(String(50), default=None)  # ambient/refrigerated/frozen
+    shelf_location: Mapped[str | None] = mapped_column(String(80), default=None)
+    is_demo: Mapped[int] = mapped_column(Integer, default=0)  # 1 = seeded demo row
 
     business: Mapped[Business] = relationship(back_populates="products")
 
@@ -130,6 +154,76 @@ class Scenario(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     business: Mapped[Business] = relationship(back_populates="scenarios")
+
+
+class ProductExperiment(Base):
+    """A virtual new-product launch experiment: test before you stock (§15-34)."""
+
+    __tablename__ = "product_experiments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
+    product_name: Mapped[str] = mapped_column(String(255))
+    brand: Mapped[str] = mapped_column(String(100), default="")
+    category: Mapped[str] = mapped_column(String(100), default="General")
+    subcategory: Mapped[str] = mapped_column(String(100), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    unit_type: Mapped[str] = mapped_column(String(30), default="pcs")
+    unit_size: Mapped[str] = mapped_column(String(50), default="")
+
+    # cost structure (per unit)
+    supplier_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    transport_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    storage_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    handling_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    other_variable_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    wastage_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    tax_rate: Mapped[float] = mapped_column(Float, default=0.0)
+
+    # price experiment range
+    min_price: Mapped[float] = mapped_column(Float, default=0.0)
+    max_price: Mapped[float] = mapped_column(Float, default=0.0)
+    price_step: Mapped[float] = mapped_column(Float, default=1.0)
+    planned_price: Mapped[float] = mapped_column(Float, default=0.0)
+
+    # launch plan
+    discount_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    initial_stock: Mapped[int] = mapped_column(Integer, default=100)
+    safety_stock: Mapped[int] = mapped_column(Integer, default=0)
+    reorder_point: Mapped[int] = mapped_column(Integer, default=0)
+    supplier_lead_time: Mapped[int] = mapped_column(Integer, default=3)
+    marketing_budget: Mapped[float] = mapped_column(Float, default=0.0)
+    launch_date: Mapped[str] = mapped_column(String(20), default="")
+    target_segment: Mapped[str] = mapped_column(String(60), default="All Customers")
+    shelf_placement: Mapped[str] = mapped_column(String(60), default="Middle Shelf")
+    competitor_price: Mapped[float] = mapped_column(Float, default=0.0)  # 0 = not provided
+
+    status: Mapped[str] = mapped_column(String(30), default="draft")  # draft|simulated|decided
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    scenarios: Mapped[list["ProductExperimentScenario"]] = relationship(
+        back_populates="experiment", cascade="all, delete-orphan")
+
+
+class ProductExperimentScenario(Base):
+    """A saved launch strategy for an experiment (price/discount/stock/marketing combo)."""
+
+    __tablename__ = "product_experiment_scenarios"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    experiment_id: Mapped[int] = mapped_column(ForeignKey("product_experiments.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    price: Mapped[float] = mapped_column(Float)
+    discount: Mapped[float] = mapped_column(Float, default=0.0)
+    stock: Mapped[int] = mapped_column(Integer, default=100)
+    marketing_budget: Mapped[float] = mapped_column(Float, default=0.0)
+    assumptions_json: Mapped[str] = mapped_column(Text, default="{}")
+    results_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    experiment: Mapped[ProductExperiment] = relationship(back_populates="scenarios")
 
 
 class ChatMessage(Base):

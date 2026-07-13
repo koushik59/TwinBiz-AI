@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
@@ -8,10 +9,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Business, ChatMessage, DailyMetric
+from ..models import Business, ChatMessage, DailyMetric, ProductExperiment, Scenario
 from ..security import get_current_business
+from ..services.forecasting import forecast_series
 from ..services.gemini import ask_gemini
-from ..services.insights import build_alerts, compute_kpis, detect_risks, health_score, recommendations
+from ..services.insights import (build_alerts, compute_kpis, detect_risks, health_score,
+                                 recommendations, twin_status)
 
 router = APIRouter(prefix="/api/insights", tags=["insights"])
 
@@ -46,15 +49,45 @@ async def advisor(body: ChatIn, business: Business = Depends(get_current_busines
     kpis = compute_kpis(db, business)
     biz_risks = detect_risks(db, business)
     recs_list = recommendations(db, business)
+
+    # forecast summary so the advisor can talk about the future with real numbers
+    since = date.today() - timedelta(days=180)
+    rows = (db.query(DailyMetric)
+            .filter(DailyMetric.business_id == business.id, DailyMetric.day >= since)
+            .order_by(DailyMetric.day).all())
+    fc = forecast_series([(r.day, r.revenue) for r in rows], 30)
+    forecast_summary = {
+        "next_30d_revenue": round(sum(p["value"] for p in fc.get("forecast", [])), 0),
+        "trend_pct_per_month": fc.get("trend_pct_per_month"),
+        "model_confidence_pct": fc.get("confidence"),
+    } if fc.get("forecast") else None
+
+    scenarios = (db.query(Scenario).filter(Scenario.business_id == business.id)
+                 .order_by(Scenario.created_at.desc()).limit(4).all())
+    experiments = (db.query(ProductExperiment)
+                   .filter(ProductExperiment.business_id == business.id)
+                   .order_by(ProductExperiment.created_at.desc()).limit(4).all())
+
     context = {
         "business": {
             "name": business.name, "type": business.business_type, "location": business.location,
             "employees_count": business.employees_count, "working_hours": business.working_hours,
         },
+        "twin_status": twin_status(db, business),
         "kpis": kpis,
         "health": health_score(db, business),
         "risks": biz_risks[:5],
         "top_recommendation": recs_list[0]["title"] if recs_list else None,
+        "forecast": forecast_summary,
+        "saved_scenarios": [
+            {"name": s.name, "predicted_profit": json.loads(s.results_json).get("profit")}
+            for s in scenarios
+        ],
+        "product_experiments": [
+            {"name": e.product_name, "category": e.category, "planned_price": e.planned_price,
+             "status": e.status, "hint": "details live in the Product Launch Lab"}
+            for e in experiments
+        ],
     }
     db.add(ChatMessage(business_id=business.id, role="user", content=body.message))
     result = await ask_gemini(body.message, context)

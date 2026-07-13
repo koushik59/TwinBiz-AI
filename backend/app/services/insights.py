@@ -19,6 +19,45 @@ def _recent_metrics(db: Session, business_id: int, days: int) -> list[DailyMetri
     )
 
 
+def twin_status(db: Session, business: Business) -> dict:
+    """Twin health header: LIVE / DEMO / STALE + data quality + confidence (§9-10)."""
+    rows = _recent_metrics(db, business.id, 400)
+    products = db.query(Product).filter(Product.business_id == business.id).all()
+
+    last_day = rows[-1].day if rows else None
+    gap_days = (date.today() - last_day).days if last_day else 999
+    if not rows:
+        status = "EMPTY"
+    elif gap_days > 3:
+        status = "STALE"
+    elif business.data_source == "demo":
+        status = "DEMO"
+    else:
+        status = "LIVE"
+
+    last30 = [r for r in rows if (date.today() - r.day).days <= 30]
+    coverage = len(last30) / 30.0
+    if products:
+        fields = ["sku", "brand", "unit_size", "supplier_cost", "lead_time_days"]
+        filled = sum(1 for p in products for f in fields if getattr(p, f) not in (None, ""))
+        completeness = filled / (len(products) * len(fields))
+    else:
+        completeness = 0.0
+    data_quality = round((coverage * 0.6 + completeness * 0.4) * 100, 0)
+
+    history_depth = min(len(rows) / 365.0, 1.0)
+    confidence = round((history_depth * 0.5 + coverage * 0.3 + completeness * 0.2) * 100, 0)
+
+    return {
+        "status": status,
+        "data_source": business.data_source,
+        "last_sync": last_day.isoformat() if last_day else None,
+        "history_days": len(rows),
+        "data_quality_pct": data_quality,
+        "confidence_pct": confidence,
+    }
+
+
 def compute_kpis(db: Session, business: Business) -> dict:
     rows = _recent_metrics(db, business.id, 60)
     if not rows:
@@ -103,8 +142,9 @@ def detect_risks(db: Session, business: Business) -> list[dict]:
     products = db.query(Product).filter(Product.business_id == business.id).all()
     risks: list[dict] = []
 
-    def add(kind, severity, title, detail, metric=None):
-        risks.append({"kind": kind, "severity": severity, "title": title, "detail": detail, "metric": metric})
+    def add(kind, severity, title, detail, metric=None, confidence=75):
+        risks.append({"kind": kind, "severity": severity, "title": title, "detail": detail,
+                      "metric": metric, "confidence_pct": confidence})
 
     # Inventory risks
     low = [p for p in products if p.stock < p.daily_demand * 5]
@@ -163,43 +203,46 @@ def detect_risks(db: Session, business: Business) -> list[dict]:
 def recommendations(db: Session, business: Business) -> list[dict]:
     risks = {r["kind"]: r for r in detect_risks(db, business)}
     kpis = compute_kpis(db, business)
+    quality = twin_status(db, business)["data_quality_pct"] / 100
     recs: list[dict] = []
 
-    def add(title, reason, benefit, priority, uplift_pct):
+    def add(title, reason, benefit, priority, uplift_pct, base_confidence):
         monthly = kpis.get("monthly_revenue", business.monthly_revenue)
         recs.append({
             "title": title, "reason": reason, "expected_benefit": benefit, "priority": priority,
             "est_revenue_uplift": round(monthly * uplift_pct / 100, 0), "uplift_pct": uplift_pct,
+            # rule confidence scaled by how complete/fresh the twin's data is
+            "confidence_pct": round(base_confidence * (0.75 + quality * 0.25), 0),
         })
 
     if "low_inventory" in risks:
         add("Restock fast-moving products now",
             risks["low_inventory"]["detail"],
-            "Prevents lost sales from stockouts on your best sellers.", "high", 4.5)
+            "Prevents lost sales from stockouts on your best sellers.", "high", 4.5, 91)
     if "overstock" in risks:
         add("Run a clearance offer on slow movers",
             risks["overstock"]["detail"],
-            "Frees locked working capital and reduces spoilage risk.", "medium", 1.5)
+            "Frees locked working capital and reduces spoilage risk.", "medium", 1.5, 78)
     if "declining_sales" in risks or "customer_churn" in risks:
         add("Boost marketing 25–40% for 3 weeks",
             "Sales/footfall are trending down; simulation shows marketing has the best short-term elasticity.",
-            "Recovers demand and re-activates lapsed customers.", "high", 5.0)
+            "Recovers demand and re-activates lapsed customers.", "high", 5.0, 72)
     if "high_expenses" in risks or "low_profit" in risks or "negative_cash_flow" in risks:
         add("Renegotiate top-3 supplier contracts",
             "COGS is your largest expense block; even a 5% supplier discount flows straight to profit.",
-            "A 5% supplier saving ≈ 2–3 points of net margin.", "high", 0.0)
+            "A 5% supplier saving ≈ 2–3 points of net margin.", "high", 0.0, 80)
     if "employee_shortage" in risks:
         add("Hire 1 additional staff member",
             risks["employee_shortage"]["detail"],
-            "Shorter queues → higher satisfaction → better retention.", "medium", 2.0)
+            "Shorter queues → higher satisfaction → better retention.", "medium", 2.0, 68)
     if kpis.get("profit_margin_pct", 0) > 14 and "declining_sales" not in risks:
         add("Test a 3–5% price increase on inelastic categories",
             f"Margin is healthy ({kpis.get('profit_margin_pct')}%) and demand is stable — pricing headroom exists.",
-            "Pure-margin revenue with minimal demand loss.", "low", 3.0)
+            "Pure-margin revenue with minimal demand loss.", "low", 3.0, 65)
     if not recs:
         add("Extend evening hours by 1–2 on weekends",
             "Business is healthy; weekend evenings show the strongest marginal demand in your history.",
-            "Captures peak-hour demand without new fixed costs.", "low", 2.0)
+            "Captures peak-hour demand without new fixed costs.", "low", 2.0, 60)
 
     order = {"high": 0, "medium": 1, "low": 2}
     recs.sort(key=lambda r: order[r["priority"]])
