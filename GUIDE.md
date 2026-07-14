@@ -95,13 +95,10 @@ taskkill /IM node.exe /F
 ```
 
 ### Resetting the data
-All data lives in one file: `backend\twinbiz.db` (SQLite). To start completely fresh
-(new demo account re-seeded automatically):
-```powershell
-# stop the backend first, then:
-del d:\ideathon\backend\twinbiz.db
-# start the backend again — it recreates everything
-```
+All data lives in your MongoDB Atlas database (`MONGODB_DB`, default `twinbiz`). To start
+completely fresh, drop that database from the Atlas UI (Browse Collections → Drop Database)
+or point `MONGODB_DB` at a new name — the backend recreates the indexes and demo account
+automatically on next startup.
 
 ---
 
@@ -109,7 +106,8 @@ del d:\ideathon\backend\twinbiz.db
 
 | Setting | What it does |
 |---|---|
-| `database_url` | Where data is stored. Default SQLite file; can point to PostgreSQL. |
+| `mongodb_uri` | MongoDB Atlas connection string (SRV). Put it in `backend\.env` as `MONGODB_URI`. |
+| `mongodb_db` | Database name inside the cluster (default `twinbiz`). |
 | `jwt_secret` | Secret used to sign login tokens. |
 | `gemini_api_key` | If set, the AI Advisor uses **real Google Gemini**. If empty, it uses the built-in offline Twin Engine (demo still works perfectly). |
 | `cors_origins` | Which frontend URLs are allowed to call the API. |
@@ -287,6 +285,6 @@ details (recalibrates the simulator baseline), and notes on the Gemini integrati
 | `Error: only one usage of each socket address` on port 8000 | Old backend still alive → see "How to STOP it" and kill the PID |
 | Port 3000 busy | Kill the old node PID, or `npm start -- -p 3001` |
 | Backend serves old code after edits | You used `--reload` — kill all python PIDs on 8000 and start without it |
-| Want fresh demo data | Stop backend, delete `backend\twinbiz.db`, start again |
+| Want fresh demo data | Drop the `twinbiz` database in MongoDB Atlas, restart the backend |
 | Advisor answers say "Twin Engine" instead of Gemini | Set a valid `GEMINI_API_KEY` in `backend\.env` and restart the backend |
 | Changed frontend code but nothing changes on :3000 | You're on `npm start` (serves the old build) — rebuild with `npm run build`, or use `npm run dev` |

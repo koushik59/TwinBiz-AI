@@ -7,9 +7,11 @@ import re
 from datetime import date, datetime
 
 import pandas as pd
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
-from ..models import Business, DailyMetric, Employee, Product, ProductSale, Supplier
+from ..database import oid
+from ..models import (Business, DailyMetric, Employee, Product, ProductSale,
+                      Supplier, find_models, to_dt)
 
 MAX_ROWS = 5000
 
@@ -256,31 +258,30 @@ def validate_rows(data_type: str, df: pd.DataFrame, mapping: dict[str, str]) -> 
     }}
 
 
-def commit_rows(db: Session, business: Business, data_type: str, rows: list[dict]) -> dict:
+def commit_rows(db: Database, business: Business, data_type: str, rows: list[dict]) -> dict:
     """Insert validated rows into the twin. Returns per-action counts."""
     created = updated = skipped = 0
 
     if data_type == "products":
-        existing = {(p.sku or p.name).lower(): p for p in
-                    db.query(Product).filter(Product.business_id == business.id).all()}
-        by_name = {p.name.lower(): p for p in existing.values()}
+        all_products = find_models(db, Product, {"business_id": business.id})
+        existing = {(p.sku or p.name).lower(): p for p in all_products}
+        by_name = {p.name.lower(): p for p in all_products}
         for r in rows:
             key = (r.get("sku") or r["name"]).lower()
             match = existing.get(key) or by_name.get(r["name"].lower())
             if match:
-                for f, v in r.items():
-                    setattr(match, f, v)
-                match.is_demo = 0
+                db.products.update_one({"_id": oid(match.id)},
+                                       {"$set": {**r, "is_demo": 0}})
                 updated += 1
             else:
                 p = Product(business_id=business.id, is_demo=0,
                             cost=r.get("cost", round(r["price"] * 0.75, 2)), **{
                                 k: v for k, v in r.items() if k != "cost"})
-                db.add(p)
+                db.products.insert_one(p.to_doc())
                 created += 1
 
     elif data_type == "sales":
-        products = db.query(Product).filter(Product.business_id == business.id).all()
+        products = find_models(db, Product, {"business_id": business.id})
         lookup: dict[str, Product] = {}
         for p in products:
             lookup[p.name.lower()] = p
@@ -292,70 +293,73 @@ def commit_rows(db: Session, business: Business, data_type: str, rows: list[dict
                 skipped += 1
                 continue
             revenue = r.get("revenue", r["units"] * p.price)
-            existing_row = db.query(ProductSale).filter(
-                ProductSale.business_id == business.id, ProductSale.product_id == p.id,
-                ProductSale.day == r["day"]).first()
-            if existing_row:
-                existing_row.units = r["units"]
-                existing_row.revenue = revenue
-                updated += 1
-            else:
-                db.add(ProductSale(business_id=business.id, product_id=p.id,
-                                   day=r["day"], units=r["units"], revenue=revenue))
+            result = db.product_sales.update_one(
+                {"business_id": business.id, "product_id": p.id, "day": to_dt(r["day"])},
+                {"$set": {"units": r["units"], "revenue": revenue}},
+                upsert=True,
+            )
+            if result.upserted_id is not None:
                 created += 1
+            else:
+                updated += 1
 
     elif data_type == "daily_metrics":
         for r in rows:
-            row = db.query(DailyMetric).filter(DailyMetric.business_id == business.id,
-                                               DailyMetric.day == r["day"]).first()
-            if row:
-                for f, v in r.items():
-                    if f != "day":
-                        setattr(row, f, v)
-                updated += 1
-            else:
-                db.add(DailyMetric(business_id=business.id, **r))
+            fields = {f: v for f, v in r.items() if f != "day"}
+            result = db.daily_metrics.update_one(
+                {"business_id": business.id, "day": to_dt(r["day"])},
+                {"$set": fields,
+                 "$setOnInsert": {k: v for k, v in DailyMetric(
+                     business_id=business.id, day=r["day"]).to_doc().items()
+                     if k not in fields and k not in ("business_id", "day")}},
+                upsert=True,
+            )
+            if result.upserted_id is not None:
                 created += 1
+            else:
+                updated += 1
 
     elif data_type == "expenses":
         # expenses fold into the daily metric row for that day
         for r in rows:
-            row = db.query(DailyMetric).filter(DailyMetric.business_id == business.id,
-                                               DailyMetric.day == r["day"]).first()
-            if row:
-                row.expenses = (row.expenses or 0) + r["amount"]
-                updated += 1
-            else:
-                db.add(DailyMetric(business_id=business.id, day=r["day"], expenses=r["amount"]))
+            result = db.daily_metrics.update_one(
+                {"business_id": business.id, "day": to_dt(r["day"])},
+                {"$inc": {"expenses": r["amount"]},
+                 "$setOnInsert": {"revenue": 0.0, "customers": 0, "orders": 0,
+                                  "new_customers": 0, "inventory_value": 0.0}},
+                upsert=True,
+            )
+            if result.upserted_id is not None:
                 created += 1
+            else:
+                updated += 1
 
     elif data_type == "suppliers":
         existing = {s.name.lower(): s for s in
-                    db.query(Supplier).filter(Supplier.business_id == business.id).all()}
+                    find_models(db, Supplier, {"business_id": business.id})}
         for r in rows:
             match = existing.get(r["name"].lower())
             if match:
-                for f, v in r.items():
-                    setattr(match, f, v)
+                db.suppliers.update_one({"_id": oid(match.id)}, {"$set": r})
                 updated += 1
             else:
-                db.add(Supplier(business_id=business.id, **r))
+                db.suppliers.insert_one(Supplier(business_id=business.id, **r).to_doc())
                 created += 1
 
     elif data_type == "employees":
         existing = {e.name.lower(): e for e in
-                    db.query(Employee).filter(Employee.business_id == business.id).all()}
+                    find_models(db, Employee, {"business_id": business.id})}
         for r in rows:
             match = existing.get(r["name"].lower())
             if match:
-                for f, v in r.items():
-                    setattr(match, f, v)
+                db.employees.update_one({"_id": oid(match.id)}, {"$set": r})
                 updated += 1
             else:
-                db.add(Employee(business_id=business.id, **r))
+                db.employees.insert_one(Employee(business_id=business.id, **r).to_doc())
                 created += 1
 
     if business.data_source == "demo":
+        db.businesses.update_one({"_id": oid(business.id)},
+                                 {"$set": {"data_source": "mixed"}})
         business.data_source = "mixed"
-    db.commit()
     return {"created": created, "updated": updated, "skipped": skipped}

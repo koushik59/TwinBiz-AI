@@ -9,17 +9,17 @@ import { ArrowDownAZ, ArrowUpZA, Boxes, ChevronLeft, ChevronRight, PackagePlus, 
 import { useCallback, useEffect, useState } from "react";
 
 type Product = {
-  id: number; name: string; sku: string | null; barcode: string | null; brand: string | null;
+  id: string; name: string; sku: string | null; barcode: string | null; brand: string | null;
   category: string; subcategory: string | null; description: string | null;
   unit_type: string | null; unit_size: string | null;
   price: number; cost: number; mrp: number | null; tax_rate: number | null;
   stock: number; min_stock: number | null; max_stock: number | null; safety_stock: number | null;
   reorder_level: number; reorder_qty: number | null; daily_demand: number;
-  supplier_id: number | null; supplier_cost: number | null; lead_time_days: number | null; moq: number | null;
+  supplier_id: string | null; supplier_cost: number | null; lead_time_days: number | null; moq: number | null;
   expiry_days: number; storage_type: string | null; shelf_location: string | null;
   is_demo: boolean; margin_pct: number; days_of_stock: number; stock_status: string;
 };
-type Supplier = { id: number; name: string; category: string; lead_time_days: number };
+type Supplier = { id: string; name: string; category: string; lead_time_days: number };
 type Summary = { count: number; inventory_value: number; low_stock: number; out_of_stock: number; demo_count: number; avg_margin_pct: number };
 
 const EMPTY_FORM = {
@@ -47,7 +47,7 @@ function toPayload(f: FormState) {
     max_stock: numOrNull(f.max_stock), safety_stock: numOrNull(f.safety_stock),
     reorder_level: Number(f.reorder_level || 0), reorder_qty: numOrNull(f.reorder_qty),
     daily_demand: Number(f.daily_demand || 0),
-    supplier_id: numOrNull(f.supplier_id), supplier_cost: numOrNull(f.supplier_cost),
+    supplier_id: strOrNull(f.supplier_id), supplier_cost: numOrNull(f.supplier_cost),
     lead_time_days: numOrNull(f.lead_time_days), moq: numOrNull(f.moq),
     expiry_days: Number(f.expiry_days || 0), storage_type: strOrNull(f.storage_type),
     shelf_location: strOrNull(f.shelf_location),

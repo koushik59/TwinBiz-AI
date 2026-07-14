@@ -11,9 +11,10 @@ import math
 from datetime import date, timedelta
 from statistics import median
 
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
-from ..models import Business, Product, ProductExperiment, ProductSale
+from ..models import (Business, Product, ProductExperiment, ProductSale,
+                      find_models, to_dt)
 from .simulation import CATEGORY_ELASTICITY, MODEL_VERSION
 
 # ---------------------------------------------------------------------------
@@ -52,23 +53,23 @@ def landed_cost(exp: ProductExperiment) -> float:
     return round(base / (1 - wastage), 2) if wastage < 1 else base
 
 
-def category_anchor(db: Session, business: Business, exp: ProductExperiment) -> dict:
+def category_anchor(db: Database, business: Business, exp: ProductExperiment) -> dict:
     """Anchor the new product's demand to real category history in the twin."""
-    similar = (
-        db.query(Product)
-        .filter(Product.business_id == business.id, Product.category == exp.category)
-        .all()
-    )
-    since = date.today() - timedelta(days=120)
+    similar = find_models(db, Product,
+                          {"business_id": business.id, "category": exp.category})
+    since = to_dt(date.today() - timedelta(days=120))
+    sales = find_models(db, ProductSale, {
+        "business_id": business.id,
+        "product_id": {"$in": [p.id for p in similar]},
+        "day": {"$gte": since},
+    }) if similar else []
+    by_product: dict[str, list[ProductSale]] = {}
+    for r in sales:
+        by_product.setdefault(r.product_id, []).append(r)
     history_days = 0
     velocities, prices = [], []
     for p in similar:
-        rows = (
-            db.query(ProductSale)
-            .filter(ProductSale.business_id == business.id, ProductSale.product_id == p.id,
-                    ProductSale.day >= since)
-            .all()
-        )
+        rows = by_product.get(p.id, [])
         if rows:
             days = len({r.day for r in rows})
             velocities.append(sum(r.units for r in rows) / max(days, 1))
@@ -101,7 +102,7 @@ def _marketing_uplift(budget: float) -> float:
     return MARKETING_MAX_UPLIFT * math.tanh(budget / MARKETING_SCALE)
 
 
-def simulate_point(db: Session, business: Business, exp: ProductExperiment, *,
+def simulate_point(db: Database, business: Business, exp: ProductExperiment, *,
                    price: float, discount: float = 0.0, stock: int | None = None,
                    marketing: float | None = None, anchor: dict | None = None) -> dict:
     """Predict one launch configuration over the first month."""
@@ -240,7 +241,7 @@ def _price_points(exp: ProductExperiment) -> list[float]:
     return pts
 
 
-def price_sweep(db: Session, business: Business, exp: ProductExperiment) -> dict:
+def price_sweep(db: Database, business: Business, exp: ProductExperiment) -> dict:
     anchor = category_anchor(db, business, exp)
     points = [simulate_point(db, business, exp, price=p, discount=0.0, anchor=anchor)
               for p in _price_points(exp)]
@@ -271,7 +272,7 @@ def price_sweep(db: Session, business: Business, exp: ProductExperiment) -> dict
     }
 
 
-def discount_sweep(db: Session, business: Business, exp: ProductExperiment,
+def discount_sweep(db: Database, business: Business, exp: ProductExperiment,
                    base_price: float | None = None) -> dict:
     anchor = category_anchor(db, business, exp)
     price = base_price or exp.planned_price
@@ -296,7 +297,7 @@ def discount_sweep(db: Session, business: Business, exp: ProductExperiment,
     }
 
 
-def inventory_sweep(db: Session, business: Business, exp: ProductExperiment,
+def inventory_sweep(db: Database, business: Business, exp: ProductExperiment,
                     price: float | None = None) -> dict:
     anchor = category_anchor(db, business, exp)
     price = price or exp.planned_price
@@ -335,7 +336,7 @@ def inventory_sweep(db: Session, business: Business, exp: ProductExperiment,
     }
 
 
-def optimize(db: Session, business: Business, exp: ProductExperiment, *,
+def optimize(db: Database, business: Business, exp: ProductExperiment, *,
              min_price: float | None = None, max_price: float | None = None,
              max_discount: float = 20, max_stock: int | None = None,
              max_marketing: float | None = None, min_margin_pct: float = 5) -> dict:
@@ -391,15 +392,12 @@ def optimize(db: Session, business: Business, exp: ProductExperiment, *,
     }
 
 
-def cannibalization(db: Session, business: Business, exp: ProductExperiment,
+def cannibalization(db: Database, business: Business, exp: ProductExperiment,
                     point: dict) -> dict:
     """Estimate sales shift from existing same-category products (§28)."""
     words = {w.lower() for w in exp.product_name.split() if len(w) > 3}
-    similar = (
-        db.query(Product)
-        .filter(Product.business_id == business.id, Product.category == exp.category)
-        .all()
-    )
+    similar = find_models(db, Product,
+                          {"business_id": business.id, "category": exp.category})
     overlaps = []
     for p in similar:
         pwords = {w.lower() for w in p.name.split() if len(w) > 3}
@@ -431,7 +429,7 @@ def cannibalization(db: Session, business: Business, exp: ProductExperiment,
     }
 
 
-def launch_timing(db: Session, business: Business, exp: ProductExperiment) -> dict:
+def launch_timing(db: Database, business: Business, exp: ProductExperiment) -> dict:
     """Recommend a launch window from weekday + festival demand patterns (§23)."""
     today = date.today()
     windows = []
@@ -454,7 +452,7 @@ def launch_timing(db: Session, business: Business, exp: ProductExperiment) -> di
     }
 
 
-def before_after(db: Session, business: Business, exp: ProductExperiment, point: dict) -> dict:
+def before_after(db: Database, business: Business, exp: ProductExperiment, point: dict) -> dict:
     """WITHOUT vs WITH launch: whole-business monthly view (§34)."""
     from .insights import compute_kpis
     kpis = compute_kpis(db, business)

@@ -29,7 +29,7 @@ type SimResult = {
 type How = { model_version: string; baseline_window: string; assumptions: string[]; label: string };
 type RunResponse = { current: SimResult; simulated: SimResult; how: How };
 
-type SimProduct = { id: number; name: string; category: string; price: number; cost: number; stock: number };
+type SimProduct = { id: string; name: string; category: string; price: number; cost: number; stock: number };
 type PriceSim = {
   product: string; category: string;
   baseline: { price: number; units_per_day: number; monthly_revenue: number; monthly_gross_profit: number; days_of_stock: number };
@@ -87,7 +87,7 @@ function HowPanel({ how, confidence }: { how: { assumptions: string[]; model_ver
 function ProductPriceMode() {
   const { toast } = useToast();
   const [products, setProducts] = useState<SimProduct[]>([]);
-  const [productId, setProductId] = useState<number | null>(null);
+  const [productId, setProductId] = useState<string | null>(null);
   const [newPrice, setNewPrice] = useState("");
   const [sim, setSim] = useState<PriceSim | null>(null);
   const [busy, setBusy] = useState(false);
@@ -145,8 +145,8 @@ function ProductPriceMode() {
             <div>
               <p className="mb-1.5 text-xs font-medium text-ink-2">Product</p>
               <Select value={productId ?? ""} onChange={(e) => {
-                const p = products.find((x) => x.id === Number(e.target.value));
-                setProductId(Number(e.target.value));
+                const p = products.find((x) => x.id === e.target.value);
+                setProductId(e.target.value);
                 if (p) setNewPrice(String(p.price + 2));
                 setSim(null);
               }}>

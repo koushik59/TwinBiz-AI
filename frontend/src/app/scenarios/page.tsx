@@ -14,7 +14,7 @@ type SimResult = {
   satisfaction: number; health_score: number; risk_score: number; inventory_value: number;
   deltas: { profit_pct: number };
 };
-type Scenario = { id: number; name: string; results: SimResult; created_at: string };
+type Scenario = { id: string; name: string; results: SimResult; created_at: string };
 
 const ROWS: { key: keyof SimResult; label: string; fmt: (n: number) => string; higherBetter: boolean }[] = [
   { key: "revenue", label: "Revenue", fmt: inr, higherBetter: true },
@@ -27,8 +27,8 @@ const ROWS: { key: keyof SimResult; label: string; fmt: (n: number) => string; h
   { key: "health_score", label: "Health", fmt: (n) => `${Math.round(n)}/100`, higherBetter: true },
 ];
 
-type Highlights = { best_profit: number | null; best_growth: number | null; lowest_risk: number | null; ai_recommended: number | null };
-type ScenariosResponse = { current: SimResult; scenarios: Scenario[]; best_id: number | null; highlights?: Highlights };
+type Highlights = { best_profit: string | null; best_growth: string | null; lowest_risk: string | null; ai_recommended: string | null };
+type ScenariosResponse = { current: SimResult; scenarios: Scenario[]; best_id: string | null; highlights?: Highlights };
 
 export default function ScenariosPage() {
   const [data, setData] = useState<ScenariosResponse | null>(null);
@@ -38,7 +38,7 @@ export default function ScenariosPage() {
   }, []);
   useEffect(load, [load]);
 
-  const remove = async (id: number) => {
+  const remove = async (id: string) => {
     await api.del(`/api/simulate/scenarios/${id}`);
     load();
   };
@@ -49,7 +49,7 @@ export default function ScenariosPage() {
     );
   }
 
-  const columns = [{ id: 0, name: "Current Business", results: data.current } as Scenario, ...data.scenarios.slice(0, 3)];
+  const columns = [{ id: "current", name: "Current Business", results: data.current } as Scenario, ...data.scenarios.slice(0, 3)];
 
   return (
     <AppShell title="Scenario Comparison">
@@ -72,7 +72,7 @@ export default function ScenariosPage() {
                       <div className="flex items-center justify-end gap-1.5">
                         {c.id === data.best_id && <Crown size={14} className="text-warning" />}
                         <span className={cn("font-semibold", c.id === data.best_id && "text-brand")}>{c.name}</span>
-                        {c.id !== 0 && (
+                        {c.id !== "current" && (
                           <button onClick={() => remove(c.id)} className="text-muted transition-colors hover:text-critical cursor-pointer" aria-label={`Delete ${c.name}`}>
                             <Trash2 size={13} />
                           </button>

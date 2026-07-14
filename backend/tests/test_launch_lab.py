@@ -1,52 +1,38 @@
 """Launch Lab engine tests on an in-memory twin."""
 
+import mongomock
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from app.database import Base
-from app.models import Business, Product, ProductExperiment, ProductSale, User
+from app.models import Business, Product, ProductExperiment, User, insert_model
 from app.services import launch_lab
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
-    yield session
-    session.close()
+    return mongomock.MongoClient()["twinbiz_test"]
 
 
 @pytest.fixture()
 def twin(db):
-    user = User(email="t@t.t", full_name="T", password_hash="x")
-    db.add(user)
-    db.flush()
-    biz = Business(owner_id=user.id, name="Test Mart", monthly_revenue=900000,
-                   monthly_expenses=700000, customer_count=2600)
-    db.add(biz)
-    db.flush()
+    user = insert_model(db, User(email="t@t.t", full_name="T", password_hash="x"))
+    biz = insert_model(db, Business(owner_id=user.id, name="Test Mart", monthly_revenue=900000,
+                                    monthly_expenses=700000, customer_count=2600))
     for name, price, cost, dd in [("Amul Milk 500ml", 28, 24, 20), ("Amul Butter", 60, 52, 6),
                                   ("Regular Lassi 200ml", 25, 19, 9), ("Eggs", 84, 66, 8)]:
-        db.add(Product(business_id=biz.id, name=name, category="Dairy",
-                       price=price, cost=cost, stock=150, daily_demand=dd))
-    db.flush()
+        insert_model(db, Product(business_id=biz.id, name=name, category="Dairy",
+                                 price=price, cost=cost, stock=150, daily_demand=dd))
     return biz
 
 
 @pytest.fixture()
 def experiment(db, twin):
-    e = ProductExperiment(
+    return insert_model(db, ProductExperiment(
         business_id=twin.id, product_name="Amul Protein Lassi 200ml", category="Dairy",
         supplier_cost=25, transport_cost=1, wastage_percent=3,
         min_price=30, max_price=50, price_step=2, planned_price=40,
         discount_percent=10, initial_stock=200, safety_stock=30, reorder_point=70,
         supplier_lead_time=3, marketing_budget=5000, target_segment="Young Adults",
-        shelf_placement="Refrigerated Section", competitor_price=45)
-    db.add(e)
-    db.flush()
-    return e
+        shelf_placement="Refrigerated Section", competitor_price=45))
 
 
 def test_landed_cost_includes_wastage(experiment):

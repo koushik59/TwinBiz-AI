@@ -3,9 +3,10 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     app_name: str = "TwinBiz AI"
-    # SQLite by default so the demo runs anywhere; point at PostgreSQL for production:
-    # postgresql://user:pass@localhost:5432/twinbiz
-    database_url: str = "sqlite:///./twinbiz.db"
+    # MongoDB Atlas connection string, e.g.
+    # mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+    mongodb_uri: str = "mongodb://localhost:27017"
+    mongodb_db: str = "twinbiz"
     jwt_secret: str = "twinbiz-dev-secret-change-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expiry_minutes: int = 60 * 24 * 7

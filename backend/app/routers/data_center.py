@@ -4,10 +4,10 @@ column mapping, validation and explicit commit."""
 import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
 from ..database import get_db
-from ..models import Business, DailyMetric, Employee, Product, ProductSale, Supplier
+from ..models import Business
 from ..security import get_current_business
 from ..services.import_engine import SCHEMAS, commit_rows, parse_file, suggest_mapping, validate_rows
 
@@ -65,7 +65,7 @@ async def preview(data_type: str = Form(...), file: UploadFile = File(...),
 async def import_data(data_type: str = Form(...), mapping: str = Form(...),
                       commit: bool = Form(False), file: UploadFile = File(...),
                       business: Business = Depends(get_current_business),
-                      db: Session = Depends(get_db)):
+                      db: Database = Depends(get_db)):
     _check_type(data_type)
     content = await _read_upload(file)
     try:
@@ -88,23 +88,22 @@ async def import_data(data_type: str = Form(...), mapping: str = Form(...),
 
 
 @router.get("/status")
-def import_status(business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def import_status(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     """What data the twin currently holds and where it came from."""
-    def count(model):
-        return db.query(model).filter(model.business_id == business.id).count()
+    def count(collection: str) -> int:
+        return db[collection].count_documents({"business_id": business.id})
 
-    products_total = count(Product)
-    products_demo = db.query(Product).filter(Product.business_id == business.id,
-                                             Product.is_demo == 1).count()
+    products_total = count("products")
+    products_demo = db.products.count_documents({"business_id": business.id, "is_demo": 1})
     return {
         "data_source": business.data_source,
         "counts": {
             "products": products_total,
             "demo_products": products_demo,
             "real_products": products_total - products_demo,
-            "daily_metrics": count(DailyMetric),
-            "product_sales": count(ProductSale),
-            "suppliers": count(Supplier),
-            "employees": count(Employee),
+            "daily_metrics": count("daily_metrics"),
+            "product_sales": count("product_sales"),
+            "suppliers": count("suppliers"),
+            "employees": count("employees"),
         },
     }

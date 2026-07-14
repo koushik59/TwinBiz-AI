@@ -9,12 +9,12 @@ import { Boxes, Package, Truck, User2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 type TwinProduct = {
-  id: number; name: string; category: string; price: number; cost: number; stock: number;
+  id: string; name: string; category: string; price: number; cost: number; stock: number;
   reorder_level: number; daily_demand: number; margin_pct: number; days_of_stock: number;
   stock_value: number; status: string;
 };
-type TwinEmployee = { id: number; name: string; role: string; salary: number; department: string; performance: number };
-type TwinSupplier = { id: number; name: string; category: string; reliability: number; lead_time_days: number; cost_index: number };
+type TwinEmployee = { id: string; name: string; role: string; salary: number; department: string; performance: number };
+type TwinSupplier = { id: string; name: string; category: string; reliability: number; lead_time_days: number; cost_index: number };
 type TwinStatus = {
   status: string; data_source: string; last_sync: string | null;
   history_days: number; data_quality_pct: number; confidence_pct: number;
@@ -167,7 +167,7 @@ export default function TwinPage() {
         <div className="xl:sticky xl:top-20 xl:self-start">
           <AnimatePresence mode="wait">
             {selected ? (
-              <motion.div key={`${selected.kind}-${(selected.item as { id: number }).id}`} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }}>
+              <motion.div key={`${selected.kind}-${(selected.item as { id: string }).id}`} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }}>
                 <Card>
                   <div className="flex items-start justify-between">
                     <CardTitle className="text-ink font-semibold text-base">

@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
-from ..database import get_db
-from ..models import Business, Employee, Product, Supplier, User
+from ..database import get_db, oid
+from ..models import Business, Employee, Product, Supplier, User, find_models, insert_model
 from ..security import get_current_business, get_current_user
 from ..seed import seed_business
 from ..services.insights import twin_status
@@ -38,14 +38,12 @@ def _business_out(b: Business) -> dict:
 
 
 @router.post("")
-def create_business(body: BusinessCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if db.query(Business).filter(Business.owner_id == user.id).count() >= 3:
+def create_business(body: BusinessCreate, user: User = Depends(get_current_user), db: Database = Depends(get_db)):
+    if db.businesses.count_documents({"owner_id": user.id}) >= 3:
         raise HTTPException(status_code=400, detail="Business limit reached")
     business = Business(owner_id=user.id, **body.model_dump(exclude={"start_mode"}))
     business.data_source = "demo" if body.start_mode == "demo" else "real"
-    db.add(business)
-    db.commit()
-    db.refresh(business)
+    insert_model(db, business)
     if body.start_mode == "demo":
         seed_business(db, business)  # 365 days of clearly-labeled synthetic twin history
     return _business_out(business)
@@ -58,19 +56,18 @@ def get_business(business: Business = Depends(get_current_business)):
 
 @router.put("")
 def update_business(body: BusinessIn, business: Business = Depends(get_current_business),
-                    db: Session = Depends(get_db)):
-    for k, v in body.model_dump().items():
-        setattr(business, k, v)
-    db.commit()
+                    db: Database = Depends(get_db)):
+    db.businesses.update_one({"_id": oid(business.id)}, {"$set": body.model_dump()})
+    business = business.model_copy(update=body.model_dump())
     return _business_out(business)
 
 
 @router.get("/twin")
-def twin_snapshot(business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def twin_snapshot(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     """Full digital-twin snapshot: layout entities with live per-entity metrics."""
-    products = db.query(Product).filter(Product.business_id == business.id).all()
-    employees = db.query(Employee).filter(Employee.business_id == business.id).all()
-    suppliers = db.query(Supplier).filter(Supplier.business_id == business.id).all()
+    products = find_models(db, Product, {"business_id": business.id})
+    employees = find_models(db, Employee, {"business_id": business.id})
+    suppliers = find_models(db, Supplier, {"business_id": business.id})
     return {
         "business": _business_out(business),
         "twin_status": twin_status(db, business),
@@ -99,5 +96,3 @@ def twin_snapshot(business: Business = Depends(get_current_business), db: Sessio
             for s in suppliers
         ],
     }
-
-

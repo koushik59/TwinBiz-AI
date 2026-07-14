@@ -4,25 +4,26 @@ from the twin's real historical metrics, not canned strings."""
 from datetime import date, timedelta
 
 import numpy as np
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
-from ..models import Business, DailyMetric, Product
-
-
-def _recent_metrics(db: Session, business_id: int, days: int) -> list[DailyMetric]:
-    since = date.today() - timedelta(days=days)
-    return (
-        db.query(DailyMetric)
-        .filter(DailyMetric.business_id == business_id, DailyMetric.day >= since)
-        .order_by(DailyMetric.day)
-        .all()
-    )
+from ..models import Business, DailyMetric, Product, find_models, to_dt
 
 
-def twin_status(db: Session, business: Business) -> dict:
+def _recent_metrics(db: Database, business_id: str, days: int) -> list[DailyMetric]:
+    since = to_dt(date.today() - timedelta(days=days))
+    return find_models(db, DailyMetric,
+                       {"business_id": business_id, "day": {"$gte": since}},
+                       sort=[("day", 1)])
+
+
+def _business_products(db: Database, business_id: str) -> list[Product]:
+    return find_models(db, Product, {"business_id": business_id})
+
+
+def twin_status(db: Database, business: Business) -> dict:
     """Twin health header: LIVE / DEMO / STALE + data quality + confidence (§9-10)."""
     rows = _recent_metrics(db, business.id, 400)
-    products = db.query(Product).filter(Product.business_id == business.id).all()
+    products = _business_products(db, business.id)
 
     last_day = rows[-1].day if rows else None
     gap_days = (date.today() - last_day).days if last_day else 999
@@ -58,7 +59,7 @@ def twin_status(db: Session, business: Business) -> dict:
     }
 
 
-def compute_kpis(db: Session, business: Business) -> dict:
+def compute_kpis(db: Database, business: Business) -> dict:
     rows = _recent_metrics(db, business.id, 60)
     if not rows:
         return {}
@@ -90,9 +91,9 @@ def compute_kpis(db: Session, business: Business) -> dict:
     }
 
 
-def health_score(db: Session, business: Business) -> dict:
+def health_score(db: Database, business: Business) -> dict:
     rows = _recent_metrics(db, business.id, 90)
-    products = db.query(Product).filter(Product.business_id == business.id).all()
+    products = _business_products(db, business.id)
     if not rows:
         return {"overall": 50, "pillars": {}}
 
@@ -137,9 +138,9 @@ def health_score(db: Session, business: Business) -> dict:
     return {"overall": overall, "pillars": pillars}
 
 
-def detect_risks(db: Session, business: Business) -> list[dict]:
+def detect_risks(db: Database, business: Business) -> list[dict]:
     rows = _recent_metrics(db, business.id, 60)
-    products = db.query(Product).filter(Product.business_id == business.id).all()
+    products = _business_products(db, business.id)
     risks: list[dict] = []
 
     def add(kind, severity, title, detail, metric=None, confidence=75):
@@ -200,7 +201,7 @@ def detect_risks(db: Session, business: Business) -> list[dict]:
     return risks
 
 
-def recommendations(db: Session, business: Business) -> list[dict]:
+def recommendations(db: Database, business: Business) -> list[dict]:
     risks = {r["kind"]: r for r in detect_risks(db, business)}
     kpis = compute_kpis(db, business)
     quality = twin_status(db, business)["data_quality_pct"] / 100
@@ -249,7 +250,7 @@ def recommendations(db: Session, business: Business) -> list[dict]:
     return recs
 
 
-def build_alerts(db: Session, business: Business) -> list[dict]:
+def build_alerts(db: Database, business: Business) -> list[dict]:
     """Alert-center feed: risks reframed as actionable alerts + stock notifications."""
     alerts = []
     for r in detect_risks(db, business):
@@ -257,7 +258,7 @@ def build_alerts(db: Session, business: Business) -> list[dict]:
             "severity": r["severity"], "title": r["title"], "detail": r["detail"],
             "kind": r["kind"], "time": "now",
         })
-    products = db.query(Product).filter(Product.business_id == business.id).all()
+    products = _business_products(db, business.id)
     for p in products:
         if 0 < p.stock <= p.reorder_level:
             alerts.append({

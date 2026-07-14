@@ -6,8 +6,8 @@ Usage:
 
 Logs in as the auto-seeded demo account and exercises every major endpoint,
 including the full Product Launch Lab flow. Exits non-zero on any failure.
-Note: creates a demo scenario + experiment — delete backend/twinbiz.db afterwards
-for a pristine demo database (it reseeds on next startup).
+Note: creates a demo scenario + experiment — drop the MongoDB database afterwards
+for a pristine demo database (indexes + demo account reseed on next startup).
 """
 
 import json

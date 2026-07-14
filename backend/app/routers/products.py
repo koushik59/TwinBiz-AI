@@ -1,12 +1,14 @@
 """Real product management: full CRUD with search / filter / sort / pagination (§6)."""
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import asc, desc, func, or_
-from sqlalchemy.orm import Session
+from pymongo import ASCENDING, DESCENDING
+from pymongo.database import Database
 
-from ..database import get_db
-from ..models import Business, Product, ProductSale, Supplier
+from ..database import get_db, next_seq, oid
+from ..models import Business, Product, Supplier, find_models, get_owned, insert_model
 from ..security import get_current_business
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -39,7 +41,7 @@ class ProductIn(BaseModel):
     reorder_qty: int | None = Field(default=None, ge=0)
     daily_demand: float = Field(default=5, ge=0)
     # supplier
-    supplier_id: int | None = None
+    supplier_id: str | None = None
     supplier_cost: float | None = Field(default=None, ge=0)
     lead_time_days: int | None = Field(default=None, ge=0)
     moq: int | None = Field(default=None, ge=0)
@@ -84,33 +86,32 @@ def list_products(
     search: str = "", category: str = "", status: str = "",
     sort: str = "name", order: str = "asc",
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    business: Business = Depends(get_current_business), db: Session = Depends(get_db),
+    business: Business = Depends(get_current_business), db: Database = Depends(get_db),
 ):
-    q = db.query(Product).filter(Product.business_id == business.id)
+    filt: dict = {"business_id": business.id}
     if search:
-        like = f"%{search}%"
-        q = q.filter(or_(Product.name.ilike(like), Product.sku.ilike(like),
-                         Product.brand.ilike(like), Product.category.ilike(like)))
+        rx = {"$regex": re.escape(search), "$options": "i"}
+        filt["$or"] = [{"name": rx}, {"sku": rx}, {"brand": rx}, {"category": rx}]
     if category:
-        q = q.filter(Product.category == category)
+        filt["category"] = category
 
-    total = q.count()
+    total = db.products.count_documents(filt)
+    cur = db.products.find(filt)
     if sort in SORTABLE:
-        col = getattr(Product, sort)
-        q = q.order_by(desc(col) if order == "desc" else asc(col))
-    items = [_product_out(p) for p in q.offset((page - 1) * page_size).limit(page_size).all()]
+        cur = cur.sort(sort, DESCENDING if order == "desc" else ASCENDING)
+    cur = cur.skip((page - 1) * page_size).limit(page_size)
+    items = [_product_out(Product.from_doc(d)) for d in cur]
     if status:  # stock_status is computed, filter after serialization
         items = [i for i in items if i["stock_status"] == status]
 
-    categories = [c for (c,) in db.query(Product.category).filter(
-        Product.business_id == business.id).distinct().order_by(Product.category).all()]
+    categories = sorted(c for c in db.products.distinct("category", {"business_id": business.id}) if c)
     return {"items": items, "total": total, "page": page, "page_size": page_size,
             "categories": categories}
 
 
 @router.get("/summary")
-def products_summary(business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
-    rows = db.query(Product).filter(Product.business_id == business.id).all()
+def products_summary(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
+    rows = find_models(db, Product, {"business_id": business.id})
     total_value = sum(p.stock * p.cost for p in rows)
     low = sum(1 for p in rows if 0 < p.stock <= p.reorder_level)
     out = sum(1 for p in rows if p.stock == 0)
@@ -124,65 +125,58 @@ def products_summary(business: Business = Depends(get_current_business), db: Ses
 
 
 @router.get("/suppliers")
-def list_suppliers(business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
-    rows = db.query(Supplier).filter(Supplier.business_id == business.id).all()
+def list_suppliers(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
+    rows = find_models(db, Supplier, {"business_id": business.id})
     return {"items": [{"id": s.id, "name": s.name, "category": s.category,
                        "lead_time_days": s.lead_time_days, "reliability": s.reliability} for s in rows]}
 
 
 @router.get("/{product_id}")
-def get_product(product_id: int, business: Business = Depends(get_current_business),
-                db: Session = Depends(get_db)):
-    p = db.get(Product, product_id)
-    if not p or p.business_id != business.id:
+def get_product(product_id: str, business: Business = Depends(get_current_business),
+                db: Database = Depends(get_db)):
+    p = get_owned(db, Product, product_id, business.id)
+    if not p:
         raise HTTPException(status_code=404, detail="Product not found")
     return _product_out(p)
 
 
 @router.post("")
 def create_product(body: ProductIn, business: Business = Depends(get_current_business),
-                   db: Session = Depends(get_db)):
+                   db: Database = Depends(get_db)):
     if body.supplier_id is not None:
-        sup = db.get(Supplier, body.supplier_id)
-        if not sup or sup.business_id != business.id:
+        sup = get_owned(db, Supplier, body.supplier_id, business.id)
+        if not sup:
             raise HTTPException(status_code=400, detail="Unknown supplier")
     if body.sku:
-        dup = db.query(Product).filter(Product.business_id == business.id,
-                                       Product.sku == body.sku).first()
+        dup = db.products.find_one({"business_id": business.id, "sku": body.sku})
         if dup:
             raise HTTPException(status_code=400, detail=f"SKU '{body.sku}' already exists")
     p = Product(business_id=business.id, is_demo=0, **body.model_dump())
     if not p.sku:
-        db.add(p)
-        db.flush()
-        p.sku = f"SKU-{business.id:03d}-{p.id:04d}"
-    else:
-        db.add(p)
+        p.sku = f"SKU-{business.id[-4:].upper()}-{next_seq(db, f'sku:{business.id}'):04d}"
+    insert_model(db, p)
     if business.data_source == "demo":
-        business.data_source = "mixed"
-    db.commit()
+        db.businesses.update_one({"_id": oid(business.id)}, {"$set": {"data_source": "mixed"}})
     return _product_out(p)
 
 
 @router.put("/{product_id}")
-def update_product(product_id: int, body: ProductIn,
-                   business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
-    p = db.get(Product, product_id)
-    if not p or p.business_id != business.id:
+def update_product(product_id: str, body: ProductIn,
+                   business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
+    p = get_owned(db, Product, product_id, business.id)
+    if not p:
         raise HTTPException(status_code=404, detail="Product not found")
-    for k, v in body.model_dump().items():
-        setattr(p, k, v)
-    db.commit()
+    db.products.update_one({"_id": oid(product_id)}, {"$set": body.model_dump()})
+    p = p.model_copy(update=body.model_dump())
     return _product_out(p)
 
 
 @router.delete("/{product_id}")
-def delete_product(product_id: int, business: Business = Depends(get_current_business),
-                   db: Session = Depends(get_db)):
-    p = db.get(Product, product_id)
-    if not p or p.business_id != business.id:
+def delete_product(product_id: str, business: Business = Depends(get_current_business),
+                   db: Database = Depends(get_db)):
+    p = get_owned(db, Product, product_id, business.id)
+    if not p:
         raise HTTPException(status_code=404, detail="Product not found")
-    db.query(ProductSale).filter(ProductSale.product_id == p.id).delete()
-    db.delete(p)
-    db.commit()
+    db.product_sales.delete_many({"product_id": p.id})
+    db.products.delete_one({"_id": oid(p.id)})
     return {"ok": True}

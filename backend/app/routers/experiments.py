@@ -4,10 +4,11 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
-from ..database import get_db
-from ..models import Business, ProductExperiment, ProductExperimentScenario
+from ..database import get_db, oid
+from ..models import (Business, ProductExperiment, ProductExperimentScenario,
+                      find_models, insert_model, utcnow)
 from ..security import get_current_business
 from ..services import launch_lab
 from ..services.gemini import ask_gemini
@@ -100,11 +101,11 @@ def _exp_out(e: ProductExperiment) -> dict:
     }
 
 
-def _get_exp(db: Session, business: Business, exp_id: int) -> ProductExperiment:
-    e = db.get(ProductExperiment, exp_id)
-    if not e or e.business_id != business.id:
+def _get_exp(db: Database, business: Business, exp_id: str) -> ProductExperiment:
+    doc = db.product_experiments.find_one({"_id": oid(exp_id), "business_id": business.id})
+    if not doc:
         raise HTTPException(status_code=404, detail="Experiment not found")
-    return e
+    return ProductExperiment.from_doc(doc)
 
 
 @router.get("/options")
@@ -134,80 +135,78 @@ def demo_preset():
 
 @router.post("")
 def create_experiment(body: ExperimentIn, business: Business = Depends(get_current_business),
-                      db: Session = Depends(get_db)):
+                      db: Database = Depends(get_db)):
     e = ProductExperiment(business_id=business.id, **body.model_dump())
-    db.add(e)
-    db.commit()
-    db.refresh(e)
+    insert_model(db, e)
     return _exp_out(e)
 
 
 @router.get("")
-def list_experiments(business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
-    rows = (db.query(ProductExperiment).filter(ProductExperiment.business_id == business.id)
-            .order_by(ProductExperiment.created_at.desc()).all())
+def list_experiments(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
+    rows = find_models(db, ProductExperiment, {"business_id": business.id},
+                       sort=[("created_at", -1)])
     return {"items": [_exp_out(e) for e in rows]}
 
 
 @router.get("/{exp_id}")
-def get_experiment(exp_id: int, business: Business = Depends(get_current_business),
-                   db: Session = Depends(get_db)):
+def get_experiment(exp_id: str, business: Business = Depends(get_current_business),
+                   db: Database = Depends(get_db)):
     return _exp_out(_get_exp(db, business, exp_id))
 
 
 @router.put("/{exp_id}")
-def update_experiment(exp_id: int, body: ExperimentIn,
-                      business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def update_experiment(exp_id: str, body: ExperimentIn,
+                      business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     e = _get_exp(db, business, exp_id)
-    for k, v in body.model_dump().items():
-        setattr(e, k, v)
-    db.commit()
+    updates = {**body.model_dump(), "updated_at": utcnow()}
+    db.product_experiments.update_one({"_id": oid(e.id)}, {"$set": updates})
+    e = e.model_copy(update=updates)
     return _exp_out(e)
 
 
 @router.delete("/{exp_id}")
-def delete_experiment(exp_id: int, business: Business = Depends(get_current_business),
-                      db: Session = Depends(get_db)):
+def delete_experiment(exp_id: str, business: Business = Depends(get_current_business),
+                      db: Database = Depends(get_db)):
     e = _get_exp(db, business, exp_id)
-    db.delete(e)
-    db.commit()
+    db.product_experiment_scenarios.delete_many({"experiment_id": e.id})
+    db.product_experiments.delete_one({"_id": oid(e.id)})
     return {"ok": True}
 
 
 @router.post("/{exp_id}/price-sweep")
-def run_price_sweep(exp_id: int, business: Business = Depends(get_current_business),
-                    db: Session = Depends(get_db)):
+def run_price_sweep(exp_id: str, business: Business = Depends(get_current_business),
+                    db: Database = Depends(get_db)):
     e = _get_exp(db, business, exp_id)
     result = launch_lab.price_sweep(db, business, e)
-    e.status = "simulated"
-    db.commit()
+    db.product_experiments.update_one(
+        {"_id": oid(e.id)}, {"$set": {"status": "simulated", "updated_at": utcnow()}})
     return result
 
 
 @router.post("/{exp_id}/discount-sweep")
-def run_discount_sweep(exp_id: int, body: SweepIn | None = None,
-                       business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def run_discount_sweep(exp_id: str, body: SweepIn | None = None,
+                       business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     e = _get_exp(db, business, exp_id)
     return launch_lab.discount_sweep(db, business, e, base_price=body.base_price if body else None)
 
 
 @router.post("/{exp_id}/inventory-sweep")
-def run_inventory_sweep(exp_id: int, body: SweepIn | None = None,
-                        business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def run_inventory_sweep(exp_id: str, body: SweepIn | None = None,
+                        business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     e = _get_exp(db, business, exp_id)
     return launch_lab.inventory_sweep(db, business, e, price=body.base_price if body else None)
 
 
 @router.post("/{exp_id}/optimize")
-def run_optimize(exp_id: int, body: OptimizeIn,
-                 business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def run_optimize(exp_id: str, body: OptimizeIn,
+                 business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     e = _get_exp(db, business, exp_id)
     return launch_lab.optimize(db, business, e, **body.model_dump())
 
 
 @router.post("/{exp_id}/analysis")
-def run_analysis(exp_id: int, business: Business = Depends(get_current_business),
-                 db: Session = Depends(get_db)):
+def run_analysis(exp_id: str, business: Business = Depends(get_current_business),
+                 db: Database = Depends(get_db)):
     """Full launch dossier at the planned configuration: point prediction,
     cannibalization, timing, break-even and before/after view."""
     e = _get_exp(db, business, exp_id)
@@ -224,8 +223,8 @@ def run_analysis(exp_id: int, business: Business = Depends(get_current_business)
 
 
 @router.post("/{exp_id}/scenarios")
-def save_scenario(exp_id: int, body: ScenarioIn,
-                  business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def save_scenario(exp_id: str, body: ScenarioIn,
+                  business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     e = _get_exp(db, business, exp_id)
     point = launch_lab.simulate_point(db, business, e, price=body.price,
                                       discount=body.discount, stock=body.stock,
@@ -237,18 +236,16 @@ def save_scenario(exp_id: int, body: ScenarioIn,
         assumptions_json=json.dumps(launch_lab._assumptions(
             e, launch_lab.category_anchor(db, business, e))),
     )
-    db.add(sc)
-    db.commit()
+    insert_model(db, sc)
     return {"id": sc.id, "name": sc.name, "results": point}
 
 
 @router.get("/{exp_id}/scenarios")
-def list_scenarios(exp_id: int, business: Business = Depends(get_current_business),
-                   db: Session = Depends(get_db)):
+def list_scenarios(exp_id: str, business: Business = Depends(get_current_business),
+                   db: Database = Depends(get_db)):
     e = _get_exp(db, business, exp_id)
-    rows = (db.query(ProductExperimentScenario)
-            .filter(ProductExperimentScenario.experiment_id == e.id)
-            .order_by(ProductExperimentScenario.created_at.desc()).limit(6).all())
+    rows = find_models(db, ProductExperimentScenario, {"experiment_id": e.id},
+                       sort=[("created_at", -1)], limit=6)
     items = [{"id": s.id, "name": s.name, "price": s.price, "discount": s.discount,
               "stock": s.stock, "marketing_budget": s.marketing_budget,
               "results": json.loads(s.results_json), "created_at": s.created_at.isoformat()}
@@ -271,20 +268,19 @@ def list_scenarios(exp_id: int, business: Business = Depends(get_current_busines
 
 
 @router.delete("/{exp_id}/scenarios/{scenario_id}")
-def delete_scenario(exp_id: int, scenario_id: int,
-                    business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def delete_scenario(exp_id: str, scenario_id: str,
+                    business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     e = _get_exp(db, business, exp_id)
-    sc = db.get(ProductExperimentScenario, scenario_id)
-    if not sc or sc.experiment_id != e.id:
+    result = db.product_experiment_scenarios.delete_one(
+        {"_id": oid(scenario_id), "experiment_id": e.id})
+    if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Scenario not found")
-    db.delete(sc)
-    db.commit()
     return {"ok": True}
 
 
 @router.post("/{exp_id}/advisor")
-async def launch_advisor(exp_id: int, business: Business = Depends(get_current_business),
-                         db: Session = Depends(get_db)):
+async def launch_advisor(exp_id: str, business: Business = Depends(get_current_business),
+                         db: Database = Depends(get_db)):
     """'Should I launch this product?' — deterministic verdict from the twin engine,
     optionally narrated by Gemini. All numbers come from the simulation (§41)."""
     e = _get_exp(db, business, exp_id)

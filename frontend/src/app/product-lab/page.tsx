@@ -12,7 +12,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 /* ------------------------------- types ---------------------------------- */
 
 type Experiment = {
-  id: number; product_name: string; brand: string; category: string; subcategory: string;
+  id: string; product_name: string; brand: string; category: string; subcategory: string;
   description: string; unit_type: string; unit_size: string;
   supplier_cost: number; transport_cost: number; storage_cost: number; handling_cost: number;
   other_variable_cost: number; wastage_percent: number; tax_rate: number; landed_cost: number;
@@ -57,7 +57,7 @@ type Verdict = {
   suggested_action: string; confidence_pct: number; source: string; narrative?: string;
 };
 type LabScenario = {
-  id: number; name: string; price: number; discount: number; stock: number;
+  id: string; name: string; price: number; discount: number; stock: number;
   marketing_budget: number; results: Point;
 };
 
@@ -142,7 +142,7 @@ export default function ProductLabPage() {
   const [constraints, setConstraints] = useState({ max_discount: "20", max_stock: "", max_marketing: "", min_margin_pct: "10" });
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
-  const [scenarios, setScenarios] = useState<{ items: LabScenario[]; highlights: Record<string, number> } | null>(null);
+  const [scenarios, setScenarios] = useState<{ items: LabScenario[]; highlights: Record<string, string> } | null>(null);
   const [scenarioForm, setScenarioForm] = useState({ name: "", price: "", discount: "0", stock: "", marketing_budget: "" });
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -220,7 +220,7 @@ export default function ProductLabPage() {
     }
   };
 
-  const removeExperiment = async (id: number) => {
+  const removeExperiment = async (id: string) => {
     await api.del(`/api/product-experiments/${id}`).catch(() => {});
     setSelected(null);
     load();
@@ -244,7 +244,7 @@ export default function ProductLabPage() {
       }
       if (kind === "analysis") setAnalysis(await api.post<Analysis>(`/api/product-experiments/${selected.id}/analysis`));
       if (kind === "verdict") setVerdict(await api.post<Verdict>(`/api/product-experiments/${selected.id}/advisor`));
-      if (kind === "scenarios") setScenarios(await api.get<{ items: LabScenario[]; highlights: Record<string, number> }>(`/api/product-experiments/${selected.id}/scenarios`));
+      if (kind === "scenarios") setScenarios(await api.get<{ items: LabScenario[]; highlights: Record<string, string> }>(`/api/product-experiments/${selected.id}/scenarios`));
     } catch (e) {
       toast(e instanceof ApiError ? e.message : "Simulation failed", "critical");
     } finally {

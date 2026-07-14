@@ -2,29 +2,25 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
-from ..database import get_db
-from ..models import Business, DailyMetric, Product, ProductSale
+from ..database import get_db, oid
+from ..models import Business, DailyMetric, find_models, to_dt
 from ..security import get_current_business
 from ..services.insights import compute_kpis, health_score, twin_status
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
-def _series(db: Session, business_id: int, days: int) -> list[DailyMetric]:
-    since = date.today() - timedelta(days=days)
-    return (
-        db.query(DailyMetric)
-        .filter(DailyMetric.business_id == business_id, DailyMetric.day >= since)
-        .order_by(DailyMetric.day)
-        .all()
-    )
+def _series(db: Database, business_id: str, days: int) -> list[DailyMetric]:
+    since = to_dt(date.today() - timedelta(days=days))
+    return find_models(db, DailyMetric,
+                       {"business_id": business_id, "day": {"$gte": since}},
+                       sort=[("day", 1)])
 
 
 @router.get("/dashboard")
-def dashboard(business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def dashboard(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     kpis = compute_kpis(db, business)
     health = health_score(db, business)
     rows = _series(db, business.id, 90)
@@ -48,18 +44,22 @@ def dashboard(business: Business = Depends(get_current_business), db: Session = 
         for k, v in sorted(weekly.items())
     ][:-1]  # drop incomplete current week
 
-    # top products (last 30 days)
-    since = date.today() - timedelta(days=30)
-    top = (
-        db.query(Product.name, func.sum(ProductSale.units).label("units"),
-                 func.sum(ProductSale.revenue).label("revenue"))
-        .join(Product, Product.id == ProductSale.product_id)
-        .filter(ProductSale.business_id == business.id, ProductSale.day >= since)
-        .group_by(Product.name)
-        .order_by(func.sum(ProductSale.revenue).desc())
-        .limit(7)
-        .all()
-    )
+    # top products (last 30 days): group sales by product, then merge by name
+    since = to_dt(date.today() - timedelta(days=30))
+    grouped = list(db.product_sales.aggregate([
+        {"$match": {"business_id": business.id, "day": {"$gte": since}}},
+        {"$group": {"_id": "$product_id", "units": {"$sum": "$units"},
+                    "revenue": {"$sum": "$revenue"}}},
+    ]))
+    names = {str(d["_id"]): d.get("name", "Unknown") for d in db.products.find(
+        {"_id": {"$in": [oid(g["_id"]) for g in grouped]}}, {"name": 1})}
+    by_name: dict[str, dict] = {}
+    for g in grouped:
+        n = names.get(g["_id"], "Unknown")
+        agg = by_name.setdefault(n, {"name": n, "units": 0, "revenue": 0.0})
+        agg["units"] += int(g["units"] or 0)
+        agg["revenue"] += float(g["revenue"] or 0)
+    top = sorted(by_name.values(), key=lambda x: -x["revenue"])[:7]
 
     # peak hours profile (derived deterministic curve scaled to real footfall)
     hours = list(range(9, 22))
@@ -76,13 +76,13 @@ def dashboard(business: Business = Depends(get_current_business), db: Session = 
         "twin_status": twin_status(db, business),
         "trend": trend,
         "weekly_trend": weekly_trend,
-        "top_products": [{"name": n, "units": int(u or 0), "revenue": float(r or 0)} for n, u, r in top],
+        "top_products": top,
         "peak_hours": peak,
     }
 
 
 @router.get("/finance")
-def finance(business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def finance(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     rows = _series(db, business.id, 365)
     monthly = defaultdict(lambda: {"revenue": 0.0, "expenses": 0.0})
     for r in rows:
@@ -134,7 +134,7 @@ def finance(business: Business = Depends(get_current_business), db: Session = De
 
 
 @router.get("/customers")
-def customers(business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def customers(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     rows = _series(db, business.id, 180)
     trend = [
         {"day": r.day.isoformat(), "customers": r.customers, "new_customers": r.new_customers,

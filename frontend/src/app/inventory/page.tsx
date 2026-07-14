@@ -9,10 +9,10 @@ import { AlertTriangle, Boxes, PackageCheck, Timer } from "lucide-react";
 import { useEffect, useState } from "react";
 
 type RestockItem = {
-  product_id: number; name: string; stock: number; daily_demand: number;
+  product_id: string; name: string; stock: number; daily_demand: number;
   days_until_stockout: number; restock_by: string; suggested_order: number; status: string;
 };
-type TwinProduct = { id: number; name: string; category: string; stock: number; daily_demand: number; stock_value: number; days_of_stock: number; status: string; margin_pct: number };
+type TwinProduct = { id: string; name: string; category: string; stock: number; daily_demand: number; stock_value: number; days_of_stock: number; status: string; margin_pct: number };
 
 export default function InventoryPage() {
   const [items, setItems] = useState<RestockItem[] | null>(null);

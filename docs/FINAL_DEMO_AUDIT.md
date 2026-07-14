@@ -25,7 +25,7 @@ frontend/  Next.js 16 App Router + TS + Tailwind v4 + Framer Motion + Recharts +
   src/components/    shell.tsx (sidebar/nav), ui.tsx, charts.tsx
   src/lib/api.ts     fetch wrapper, JWT in localStorage, auto local/deployed base URL
 
-backend/   FastAPI + SQLAlchemy 2 + SQLite (Postgres-ready) + numpy/sklearn
+backend/   FastAPI + PyMongo (MongoDB Atlas) + numpy/sklearn
   app/models.py      User, Business, Product, Employee, Supplier, DailyMetric,
                      ProductSale, Scenario, ChatMessage
   app/routers/       auth, business (+twin snapshot, product CRUD), analytics
@@ -60,7 +60,7 @@ per-product daily units for the last 120 days). Simulation operates on whole-bus
 - AI Advisor: Gemini (when key set) grounded in twin context; extensive deterministic
   offline fallback (17 intent branches).
 - Reports: JSON + CSV export (daily/weekly/monthly).
-- Docker + docker-compose; SQLite default, Postgres supported.
+- Deploy: Vercel (frontend) + Render (backend, render.yaml) + MongoDB Atlas.
 
 ## 3. Broken / weak spots
 
@@ -137,7 +137,7 @@ per-product daily units for the last 120 days). Simulation operates on whole-bus
 - `backend/app/models.py` — extend Product; add data_source to Business; add
   ProductExperiment/…Scenario/…Result.
 - `backend/app/routers/business.py` — products CRUD moves richer; seed becomes opt-in.
-- `backend/app/main.py` — register new routers; additive SQLite column migration.
+- `backend/app/main.py` — register new routers; startup index creation (MongoDB).
 - `backend/app/routers/simulate.py` — product-level price simulation + assumptions.
 - `backend/app/services/gemini.py` / `insights_router.py` — extended advisor context,
   launch advisor.
@@ -160,7 +160,7 @@ per-product daily units for the last 120 days). Simulation operates on whole-bus
 - `frontend/src/app/product-lab/page.tsx`
 - `docs/FINAL_DEMO_AUDIT.md` (this file).
 
-## 12. Database changes (SQLite-safe: additive columns + new tables only)
+## 12. Database changes (additive fields + new collections only; now on MongoDB)
 
 - `businesses`: + `data_source` ("demo" | "real" | "mixed"), + `avg_daily_customers?`
   (already covered by customer_count), + `suppliers_count` not needed (relation exists).

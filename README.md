@@ -44,21 +44,21 @@ full API smoke test (26 checks): `.venv/Scripts/python scripts/smoke_test.py`.
 ## 🏗 Tech Stack
 
 - **Frontend:** Next.js (App Router) · React · TypeScript · Tailwind CSS v4 · Framer Motion · Recharts · Lucide
-- **Backend:** FastAPI · Python · SQLAlchemy 2 · scikit-learn · NumPy · Pandas
-- **Database:** SQLite for instant local demo, PostgreSQL in Docker/production (same code, one env var)
+- **Backend:** FastAPI · Python · PyMongo · scikit-learn · NumPy · Pandas
+- **Database:** MongoDB Atlas (cloud) — one `MONGODB_URI` env var for all environments
 - **AI:** Google Gemini API (with offline rule-engine fallback grounded in twin data)
 - **Auth:** JWT (PBKDF2-hashed passwords)
-- **Deploy:** Docker + docker-compose
+- **Deploy:** Frontend on Vercel · Backend on Render (render.yaml blueprint included)
 
-## 🚀 Quick Start (local, no Docker)
+## 🚀 Quick Start (local)
 
-**Backend** (Python 3.12+):
+**Backend** (Python 3.11+) — needs a MongoDB Atlas connection string in `backend/.env` (see Environment below):
 
 ```bash
 cd backend
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt      # Windows
-.venv/Scripts/python -m uvicorn app.main:app --port 8000 --reload
+.venv/Scripts/python -m uvicorn app.main:app --port 8000
 ```
 
 **Frontend** (Node 20+):
@@ -74,20 +74,27 @@ year of data, or register and create your own twin in the setup wizard.
 
 API docs: http://localhost:8000/docs
 
-## 🐳 Docker (with PostgreSQL)
+## ☁️ Deployment (Vercel + Render + MongoDB Atlas)
+
+1. **MongoDB Atlas:** create a free cluster → add a database user → Network Access: allow `0.0.0.0/0` (Render's free tier has no static egress IPs) → copy the SRV connection string.
+2. **Render (backend):** create a Web Service from this repo (the included `render.yaml` blueprint configures it) and set `MONGODB_URI` in the dashboard. The demo account and indexes are created automatically on first startup.
+3. **Vercel (frontend):** import the repo with root directory `frontend` — no env vars required (the API base URL auto-selects the Render backend on non-localhost hosts).
+
+**Migrating data from the old SQLite/Postgres database:** a one-time script copies every table into Atlas, remapping integer ids to ObjectIds and preserving relationships:
 
 ```bash
-GEMINI_API_KEY=your-key docker compose up --build
+cd backend
+.venv/Scripts/pip install sqlalchemy         # only needed for this script
+.venv/Scripts/python scripts/migrate_sql_to_mongo.py --sql-url sqlite:///./twinbiz.db --mongo-uri "mongodb+srv://..." --db twinbiz
 ```
-
-Frontend on :3000, API on :8000, Postgres persisted in a volume.
 
 ## 🔑 Environment
 
 `backend/.env` (see `.env.example`):
 
 ```
-DATABASE_URL=sqlite:///./twinbiz.db     # or postgresql://user:pass@host:5432/twinbiz
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/   # MongoDB Atlas connection string
+MONGODB_DB=twinbiz
 JWT_SECRET=change-me
 GEMINI_API_KEY=                         # optional — advisor falls back to Twin Engine
 ```
@@ -108,7 +115,7 @@ over a trend + one-hot weekday design matrix with 80% confidence bands from resi
 ```
 backend/app
 ├── main.py            # FastAPI app + demo seeding
-├── models.py          # SQLAlchemy schema (users, businesses, products, metrics…)
+├── models.py          # MongoDB document models (users, businesses, products, metrics…)
 ├── seed.py            # 365-day realistic data generator
 ├── security.py        # JWT + PBKDF2
 ├── services/
