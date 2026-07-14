@@ -271,3 +271,23 @@ class ChatMessage(MongoModel):
     role: str  # user | assistant
     content: str
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class Decision(MongoModel):
+    """AI CEO Mode: a proposed action awaiting the owner's approval."""
+
+    COLLECTION: ClassVar[str] = "decisions"
+
+    business_id: str
+    key: str            # dedupe key, e.g. "restock:<product_id>"
+    kind: str           # restock | price | clearance | marketing | spending
+    title: str
+    detail: str
+    expected_impact: str
+    impact_inr: float = 0.0
+    action_type: str = "advice"   # update_price | log_order | advice
+    action_json: str = "{}"       # payload for apply on approval
+    status: str = "pending"       # pending | approved | rejected
+    result_note: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    decided_at: datetime | None = None

@@ -15,6 +15,12 @@ customers and risk *before spending real money*.
 
 | Module | What it does |
 |---|---|
+| **Business Time Machine** 🕰 | Slide to any recorded date and **replay the business as it was**: trailing KPIs, cash curve, top sellers, plus deterministic explanations ("Revenue spiked +43% — inside the Holi window", "Milk had no sales for 5 days — likely stockout, ~100 lost units"). Ends with **Future News**: dated fictional headlines projected from your real forecast |
+| **AI CEO Mode** 👑 | A decision inbox: the twin proposes concrete actions (restock orders, price moves on inelastic categories, clearances, marketing boosts, spending deferrals) each with a **simulated ₹ impact** — approve to apply (price changes execute immediately), reject to silence for two weeks |
+| **Business Weather** ⛅ | The next 7–14 days as a weather report: Sales ☀️ from the ML forecast vs weekday baselines, Inventory ⛈ from live days-to-stockout, Cash 🌤 from projected daily net |
+| **Stress Test Simulator** 🛡 | Banking-style shocks: 40% supplier delay, 25% staff absence, 15% inflation, fuel spike, pandemic-grade demand collapse, festival rush → monthly cash impact, **survival time**, demand served %, and a recovery playbook per scenario |
+| **Business DNA & Mood** 🧬 | Six personality traits (growth character, demand stability, inventory efficiency, loyalty, resilience, growth potential) each scored with its evidence, plus an at-a-glance mood (😊/😟) with what's lifting or weighing it |
+| **Opportunity Radar** 📡 | Finds upside instead of problems: upcoming festival windows sized from **your own measured lift last year**, your strongest weekday, rising categories, and capital locked in slow movers |
 | **Product Launch Lab** 🚀 | *Test before you stock*: define a virtual new product (costs, price range, stock, marketing, segment, shelf placement, competitor price) → price sweep ₹min→₹max, discount lab, inventory lab, cannibalization estimate, break-even, 0–100 launch risk score, deterministic grid-search **“Find Best Launch Strategy”**, and a *“Should I launch this product?”* verdict |
 | **AI Business Simulator** | 8 business levers **plus product-level price simulation** (“What if I raise Amul Milk by ₹2?” → demand, revenue, gross profit, satisfaction, substitution risk — with elasticity assumptions and confidence shown) |
 | **What-If Analysis** | One-click presets: milk price ±₹2, hire one extra cashier, 10% festival offer, marketing +20%… ranked by profit impact |
