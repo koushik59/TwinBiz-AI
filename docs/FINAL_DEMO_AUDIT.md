@@ -187,5 +187,3 @@ per-product daily units for the last 120 days). Simulation operates on whole-bus
 
 ## 14. Highest-priority first coding task
 
-Remove pricing section (5 min), then start Products module — Launch Lab depends on the
-richer product/cost fields it introduces.
