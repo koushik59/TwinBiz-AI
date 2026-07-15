@@ -8,16 +8,24 @@ import {
   Bell,
   Bot,
   Boxes,
+  CloudSun,
+  Crown,
+  Database,
+  Dna,
   FlaskConical,
   GitCompareArrows,
+  History,
   LayoutDashboard,
   LineChart,
   LogOut,
   Menu,
   Moon,
   Network,
-  PiggyBank,
+  Radar,
+  Rocket,
   Settings,
+  ShieldAlert,
+  ShoppingBasket,
   Sparkles,
   Sun,
   Users,
@@ -32,12 +40,22 @@ const NAV = [
   { group: "Overview", items: [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/twin", label: "Digital Twin", icon: Network },
+    { href: "/products", label: "Products", icon: ShoppingBasket },
   ]},
   { group: "Decision Lab", items: [
+    { href: "/product-lab", label: "Product Launch Lab", icon: Rocket },
     { href: "/simulator", label: "Simulator", icon: FlaskConical },
     { href: "/scenarios", label: "Scenarios", icon: GitCompareArrows },
     { href: "/forecast", label: "Forecasting", icon: LineChart },
     { href: "/advisor", label: "AI Advisor", icon: Bot },
+  ]},
+  { group: "AI Lab", items: [
+    { href: "/time-machine", label: "Time Machine", icon: History },
+    { href: "/ceo", label: "AI CEO Mode", icon: Crown },
+    { href: "/weather", label: "Business Weather", icon: CloudSun },
+    { href: "/stress-test", label: "Stress Test", icon: ShieldAlert },
+    { href: "/dna", label: "Business DNA", icon: Dna },
+    { href: "/opportunities", label: "Opportunity Radar", icon: Radar },
   ]},
   { group: "Intelligence", items: [
     { href: "/inventory", label: "Inventory", icon: Boxes },
@@ -47,6 +65,7 @@ const NAV = [
     { href: "/recommendations", label: "Recommendations", icon: Sparkles },
   ]},
   { group: "Operations", items: [
+    { href: "/data-center", label: "Data Center", icon: Database },
     { href: "/alerts", label: "Alert Center", icon: Bell },
     { href: "/reports", label: "Reports", icon: BarChart3 },
     { href: "/settings", label: "Settings", icon: Settings },
@@ -56,10 +75,21 @@ const NAV = [
 export function useTheme() {
   const [dark, setDark] = useState(true);
   useEffect(() => {
+    // auto mode: follow the system preference until the user explicitly toggles
     const stored = localStorage.getItem("twinbiz_theme");
-    const isDark = stored ? stored === "dark" : true;
+    const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const isDark = stored ? stored === "dark" : systemDark;
     setDark(isDark);
     document.documentElement.classList.toggle("dark", isDark);
+    if (stored) return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e: MediaQueryListEvent) => {
+      if (localStorage.getItem("twinbiz_theme")) return; // manual choice wins
+      setDark(e.matches);
+      document.documentElement.classList.toggle("dark", e.matches);
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
   }, []);
   const toggle = () => {
     const next = !dark;

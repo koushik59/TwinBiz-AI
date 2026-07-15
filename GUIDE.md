@@ -95,13 +95,10 @@ taskkill /IM node.exe /F
 ```
 
 ### Resetting the data
-All data lives in one file: `backend\twinbiz.db` (SQLite). To start completely fresh
-(new demo account re-seeded automatically):
-```powershell
-# stop the backend first, then:
-del d:\ideathon\backend\twinbiz.db
-# start the backend again — it recreates everything
-```
+All data lives in your MongoDB Atlas database (`MONGODB_DB`, default `twinbiz`). To start
+completely fresh, drop that database from the Atlas UI (Browse Collections → Drop Database)
+or point `MONGODB_DB` at a new name — the backend recreates the indexes and demo account
+automatically on next startup.
 
 ---
 
@@ -109,7 +106,8 @@ del d:\ideathon\backend\twinbiz.db
 
 | Setting | What it does |
 |---|---|
-| `database_url` | Where data is stored. Default SQLite file; can point to PostgreSQL. |
+| `mongodb_uri` | MongoDB Atlas connection string (SRV). Put it in `backend\.env` as `MONGODB_URI`. |
+| `mongodb_db` | Database name inside the cluster (default `twinbiz`). |
 | `jwt_secret` | Secret used to sign login tokens. |
 | `gemini_api_key` | If set, the AI Advisor uses **real Google Gemini**. If empty, it uses the built-in offline Twin Engine (demo still works perfectly). |
 | `cors_origins` | Which frontend URLs are allowed to call the API. |
@@ -265,6 +263,119 @@ details (recalibrates the simulator baseline), and notes on the Gemini integrati
 
 ---
 
+## 5b. The AI Lab — six new intelligence features, explained
+
+You'll find these in the sidebar under **AI Lab**. Everything below is computed from your
+own business history — every number shows its evidence, nothing is invented.
+
+### 🕰 Business Time Machine (`/time-machine`)
+**What it is:** Every dashboard shows you *today*. The Time Machine lets you travel to any
+past day and see the business exactly as it was — and it explains what happened.
+
+**Why it's useful:** "Why was last month weak?" normally means digging through spreadsheets.
+Here you drag a slider and the AI answers with evidence: *"Revenue spiked +43% — inside the
+Holi window"*, or *"Amul Milk had no sales for 5 days (likely stockout) — roughly 100 lost
+units."* Mistakes become lessons instead of mysteries.
+
+**How to use it:**
+1. Drag the timeline slider (or tap the **-90d / -30d / -7d** shortcuts) to pick a date.
+2. Read the replayed state: that day's exact numbers, the trailing 30-day KPIs, the 60-day
+   revenue/expense and cash charts, and the top sellers of that fortnight.
+3. Check **"What the AI found in this window"** — spikes, dips and likely stockouts, each
+   with the numbers behind the claim.
+4. Scroll to the bottom for **Tomorrow's Headlines** (see Future News below).
+
+### 📰 Future News (bottom of the Time Machine page)
+**What it is:** Fictional-but-grounded newspaper headlines about *your* future, written from
+your real forecast, inventory and margin numbers — e.g. *"October 2026: SmartMart Reports
+15% Quarterly Growth"* or *"Store Faces Stockouts During Diwali Rush."*
+
+**Why it's useful:** A chart says "trend −2%/month"; a headline says what that actually
+becomes if you do nothing. It makes long-term consequences feel real. Every headline lists
+what it's based on, and the whole section is clearly labeled as an illustrative projection.
+
+**How to use it:** Nothing to configure — the headlines update automatically as your data
+and decisions change. If you see a bad headline, the story usually names the fix (restock,
+pricing, marketing) — go test it in the Simulator.
+
+### 👑 AI CEO Mode (`/ceo`)
+**What it is:** An inbox where the AI acts like a deputy CEO: it scans the twin and files
+concrete, ready-to-approve proposals — *"Order 168 units of Lays Chips"*, *"Raise Fortune
+Oil from ₹180 to ₹187 (simulated +₹2,100/month gross profit)"*, *"Run a 12% clearance on 3
+slow movers."* Nothing happens without your click.
+
+**Why it's useful:** The Recommendation Center tells you *what kind* of thing to do; CEO
+Mode does the homework — exact product, exact quantity, exact price, with the simulated ₹
+impact — and keeps a log of what you approved and rejected.
+
+**How to use it:**
+1. Open **AI CEO Mode**. The header shows how many decisions await you and the total
+   simulated monthly impact on the table.
+2. Read each card's reasoning, then **Approve** or **Reject**.
+   - Approving a **price** decision applies it immediately (you'll see it in Products).
+   - Approving a **restock** records the order and saves the reorder quantity — update the
+     stock in Products when the delivery actually arrives.
+   - Rejected proposals stay silent for two weeks, then may return if still relevant.
+3. The **History** tab is your decision log — what was approved, when, and what it did.
+
+### ⛅ Business Weather (`/weather`)
+**What it is:** Your next 7 or 14 days as a weather report. Each day gets three readings:
+**Sales** (☀️/☁️/⛈ from the ML forecast vs what that weekday normally earns), **Inventory**
+(storms on the exact day a fast mover runs out), and **Cash** (projected daily net).
+
+**Why it's useful:** It's the fastest possible answer to "how does my week look?" — no
+charts to interpret. A ⛈ on Friday's inventory literally means: something sells out Friday,
+order it now.
+
+**How to use it:** Open the page, pick **7 days** or **14 days**. Hover any card to read the
+exact numbers behind each icon. Storm on inventory → go to Inventory for the reorder
+quantity; storm on cash → check Financials and the CEO inbox.
+
+### 🛡 Stress Test Simulator (`/stress-test`)
+**What it is:** Banks stress-test their books; now you can stress-test your shop. Six
+prebuilt disaster scenarios run against your last 30 days: **40% supplier delay, 25% staff
+absence, 15% inflation, fuel price surge, pandemic-style demand collapse, festival rush.**
+
+**Why it's useful:** Each card answers the three questions that matter in a crisis:
+*How much does it cost me per month? How long can I survive it? What do I do about it?*
+The "survival time" tells you how many months your working capital absorbs the losses, and
+every scenario ends with a concrete recovery playbook.
+
+**How to use it:** Open the page — all six scenarios run automatically. Start with the
+banner: *"X/6 scenarios survived"* and which shock hits you hardest. Expand **Assumptions**
+on any card to see exactly how it was computed. Then rehearse the recovery moves in the
+Simulator before you ever need them.
+
+### 🧬 Business DNA & Mood (`/dna`)
+**What it is:** Instead of another KPI wall, your business gets a personality profile:
+**Growth Character, Demand Stability, Inventory Efficiency, Customer Loyalty, Resilience,
+Growth Potential** — each scored 0–100 with the evidence sentence that produced it. On top
+sits the **Mood**: 😊 Happy / 🙂 Content / 😟 Stressed / 😰 Struggling, with the exact
+factors lifting it up or dragging it down.
+
+**Why it's useful:** You can feel in five seconds where the business is strong and where it
+leaks. "Loyalty: Very Strong, but Resilience: Fragile" is a strategy in one line — customers
+love you, but one bad month hurts, so build margin.
+
+**How to use it:** Just read it top to bottom. Weak trait → the evidence line tells you
+where to act (inventory traits point to Inventory, resilience points to Financials and the
+Stress Test). Revisit monthly — the DNA shifts as your data does.
+
+### 📡 Opportunity Radar (`/opportunities`)
+**What it is:** The Risk Analyzer finds problems; the radar finds **upside**: upcoming
+festival demand windows (sized from your own measured lift last year, not a guess), your
+strongest weekday, categories trending up, and capital locked in slow movers.
+
+**Why it's useful:** Each card is a ready-made play with an estimated ₹ value: *"Diwali
+window in 23 days — last year this window ran +38% vs surrounding weeks. Stock up your fast
+movers ~15 days ahead. Potential ≈ ₹58,000."*
+
+**How to use it:** Check it weekly. Cards are sorted by potential value; each one shows its
+**Evidence** (where the number comes from), the **Play** (what to do), and suggested
+products. Combine with the Simulator's "festival offer" preset to plan the exact discount.
+
+---
+
 ## 6. Demo script suggestion (for judging)
 
 1. **Landing page** — show the tagline and scroll the animations (30 s)
@@ -287,6 +398,6 @@ details (recalibrates the simulator baseline), and notes on the Gemini integrati
 | `Error: only one usage of each socket address` on port 8000 | Old backend still alive → see "How to STOP it" and kill the PID |
 | Port 3000 busy | Kill the old node PID, or `npm start -- -p 3001` |
 | Backend serves old code after edits | You used `--reload` — kill all python PIDs on 8000 and start without it |
-| Want fresh demo data | Stop backend, delete `backend\twinbiz.db`, start again |
+| Want fresh demo data | Drop the `twinbiz` database in MongoDB Atlas, restart the backend |
 | Advisor answers say "Twin Engine" instead of Gemini | Set a valid `GEMINI_API_KEY` in `backend\.env` and restart the backend |
 | Changed frontend code but nothing changes on :3000 | You're on `npm start` (serves the old build) — rebuild with `npm run build`, or use `npm run dev` |

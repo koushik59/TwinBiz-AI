@@ -8,7 +8,7 @@ import { motion } from "framer-motion";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 
-type Risk = { kind: string; severity: "critical" | "high" | "medium" | "low"; title: string; detail: string };
+type Risk = { kind: string; severity: "critical" | "high" | "medium" | "low"; title: string; detail: string; confidence_pct?: number };
 
 const sevRank = { critical: 0, high: 1, medium: 2, low: 3 };
 const sevBar: Record<string, string> = {
@@ -61,7 +61,10 @@ export default function RisksPage() {
                         <p className="mt-1 text-sm leading-relaxed text-ink-2">{r.detail}</p>
                       </div>
                     </div>
-                    <Badge tone={r.severity}>{r.severity}</Badge>
+                    <span className="flex shrink-0 flex-col items-end gap-1">
+                      <Badge tone={r.severity}>{r.severity}</Badge>
+                      {r.confidence_pct !== undefined && <span className="text-[10px] text-muted">confidence {r.confidence_pct}%</span>}
+                    </span>
                   </div>
                 </Card>
               </motion.div>

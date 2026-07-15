@@ -271,6 +271,46 @@ export function EmptyState({ icon: Icon, title, hint, action }: { icon: LucideIc
   );
 }
 
+/* ---------------------------------- Modal --------------------------------- */
+
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  wide = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto p-4 pt-10 md:pt-16">
+      <div className="fixed inset-0 bg-black/55 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, y: 18, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className={cn(
+          "relative w-full rounded-2xl border border-line bg-surface p-5 shadow-2xl",
+          wide ? "max-w-3xl" : "max-w-lg"
+        )}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{title}</h3>
+          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1 text-muted hover:bg-brand-soft hover:text-ink cursor-pointer">
+            ✕
+          </button>
+        </div>
+        {children}
+      </motion.div>
+    </div>
+  );
+}
+
 /* ---------------------------------- Toast --------------------------------- */
 
 

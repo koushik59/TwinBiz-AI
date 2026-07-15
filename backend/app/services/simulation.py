@@ -176,16 +176,116 @@ def simulate(base: Baseline, levers: Levers) -> dict:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Product-level price simulation (§11-12): "What if I raise Amul Milk by ₹2?"
+# ---------------------------------------------------------------------------
+
+MODEL_VERSION = "twin-engine-2.0"
+
+# Own-price elasticity assumptions per supermarket category (economic literature
+# ranges for Indian grocery retail; used when a product has no price-variation
+# history of its own — always surfaced as an assumption in the response).
+CATEGORY_ELASTICITY = {
+    "Dairy": -0.9, "Bakery": -1.1, "Rice & Grains": -0.8, "Staples": -0.8,
+    "Beverages": -1.6, "Snacks": -1.8, "Household": -1.2, "Personal Care": -1.3,
+    "Fruits": -1.4, "Vegetables": -1.3, "Frozen Foods": -1.5, "General": -1.5,
+}
+
+
+def product_price_simulation(
+    *,
+    name: str,
+    category: str,
+    current_price: float,
+    cost: float,
+    new_price: float,
+    units_per_day: float,
+    stock: int,
+    lead_time_days: int = 3,
+    history_days: int = 0,
+) -> dict:
+    """Deterministic price-change prediction for one product.
+
+    units_per_day should come from real sales history when available;
+    history_days is how many days of history informed it (drives confidence).
+    """
+    elasticity = CATEGORY_ELASTICITY.get(category, CATEGORY_ELASTICITY["General"])
+    price_frac = (new_price - current_price) / current_price if current_price else 0.0
+
+    demand_mult = (1 + price_frac) ** elasticity if price_frac > -1 else 2.5
+    new_units = units_per_day * demand_mult
+
+    base_rev_m = current_price * units_per_day * 30
+    new_rev_m = new_price * new_units * 30
+    base_gp_m = (current_price - cost) * units_per_day * 30
+    new_gp_m = (new_price - cost) * new_units * 30
+
+    # customer response: hikes on essentials annoy; cuts delight (bounded)
+    satisfaction_delta = round(max(min(-price_frac * 32, 12.0), -15.0), 1)
+    substitution_risk = round(min(max(price_frac * 100 * (-elasticity) * 0.55, 0), 85), 1)
+
+    days_of_stock = stock / max(new_units, 0.1)
+    stockout_risk = ("high" if days_of_stock < lead_time_days
+                     else "medium" if days_of_stock < lead_time_days * 2 else "low")
+
+    # confidence: driven by how much real velocity history informed the baseline
+    confidence = round(min(52 + history_days * 0.35, 88) if history_days else 45, 0)
+
+    direction = "increase" if price_frac > 0 else "decrease" if price_frac < 0 else "hold"
+    explanation = (
+        f"A price {direction} of {abs(price_frac) * 100:.1f}% on {name} with category elasticity "
+        f"{elasticity} is predicted to change demand by {(demand_mult - 1) * 100:+.1f}%. "
+        f"Gross profit is predicted to move {(new_gp_m - base_gp_m):+,.0f}₹/month."
+    )
+
+    return {
+        "product": name,
+        "category": category,
+        "baseline": {
+            "price": round(current_price, 2), "units_per_day": round(units_per_day, 1),
+            "monthly_revenue": round(base_rev_m, 0), "monthly_gross_profit": round(base_gp_m, 0),
+            "days_of_stock": round(stock / max(units_per_day, 0.1), 1),
+        },
+        "proposed": {
+            "price": round(new_price, 2), "units_per_day": round(new_units, 1),
+            "monthly_revenue": round(new_rev_m, 0), "monthly_gross_profit": round(new_gp_m, 0),
+            "days_of_stock": round(days_of_stock, 1),
+        },
+        "delta": {
+            "demand_pct": round((demand_mult - 1) * 100, 1),
+            "revenue": round(new_rev_m - base_rev_m, 0),
+            "revenue_pct": round((new_rev_m / base_rev_m - 1) * 100, 1) if base_rev_m else 0,
+            "gross_profit": round(new_gp_m - base_gp_m, 0),
+            "gross_profit_pct": round((new_gp_m / base_gp_m - 1) * 100, 1) if base_gp_m else 0,
+            "satisfaction_pts": satisfaction_delta,
+        },
+        "risk": {
+            "substitution_pct": substitution_risk,
+            "stockout": stockout_risk,
+        },
+        "confidence_pct": confidence,
+        "assumptions": [
+            f"Category price elasticity of {elasticity} for {category} (industry assumption — "
+            f"the twin has no price-variation history for this product yet)",
+            f"Baseline velocity {units_per_day:.1f} units/day from "
+            + (f"{history_days} days of sales history" if history_days else "the product's configured demand"),
+            "Competitor prices and seasonality held constant over the horizon",
+        ],
+        "model_version": MODEL_VERSION,
+        "label": "Predicted (not guaranteed)",
+    }
+
+
 # Named what-if presets exposed in the UI
 WHAT_IF_PRESETS: dict[str, Levers] = {
+    "hire_1_cashier": Levers(employee_delta=1),
+    "festival_offer_10": Levers(discount_pct=10, marketing_change_pct=40, inventory_change_pct=15),
+    "marketing_up_20": Levers(marketing_change_pct=20),
+    "stock_up_15": Levers(inventory_change_pct=15),
+    "extend_hours_2": Levers(hours_delta=2),
+    "cheaper_supplier": Levers(supplier_cost_change_pct=-8),
+    "cut_opex_10": Levers(opex_change_pct=-10),
     "increase_price_10": Levers(price_change_pct=10),
     "decrease_price_10": Levers(price_change_pct=-10),
-    "hire_2_employees": Levers(employee_delta=2),
-    "reduce_1_employee": Levers(employee_delta=-1),
-    "festival_offer": Levers(discount_pct=15, marketing_change_pct=60, inventory_change_pct=25),
     "double_marketing": Levers(marketing_change_pct=100),
-    "reduce_inventory_20": Levers(inventory_change_pct=-20),
-    "cheaper_supplier": Levers(supplier_cost_change_pct=-8),
-    "extend_hours_2": Levers(hours_delta=2),
-    "cut_opex_15": Levers(opex_change_pct=-15),
 }

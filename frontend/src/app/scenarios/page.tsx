@@ -14,7 +14,7 @@ type SimResult = {
   satisfaction: number; health_score: number; risk_score: number; inventory_value: number;
   deltas: { profit_pct: number };
 };
-type Scenario = { id: number; name: string; results: SimResult; created_at: string };
+type Scenario = { id: string; name: string; results: SimResult; created_at: string };
 
 const ROWS: { key: keyof SimResult; label: string; fmt: (n: number) => string; higherBetter: boolean }[] = [
   { key: "revenue", label: "Revenue", fmt: inr, higherBetter: true },
@@ -27,15 +27,18 @@ const ROWS: { key: keyof SimResult; label: string; fmt: (n: number) => string; h
   { key: "health_score", label: "Health", fmt: (n) => `${Math.round(n)}/100`, higherBetter: true },
 ];
 
+type Highlights = { best_profit: string | null; best_growth: string | null; lowest_risk: string | null; ai_recommended: string | null };
+type ScenariosResponse = { current: SimResult; scenarios: Scenario[]; best_id: string | null; highlights?: Highlights };
+
 export default function ScenariosPage() {
-  const [data, setData] = useState<{ current: SimResult; scenarios: Scenario[]; best_id: number | null } | null>(null);
+  const [data, setData] = useState<ScenariosResponse | null>(null);
 
   const load = useCallback(() => {
-    api.get<{ current: SimResult; scenarios: Scenario[]; best_id: number | null }>("/api/simulate/scenarios").then(setData).catch(() => {});
+    api.get<ScenariosResponse>("/api/simulate/scenarios").then(setData).catch(() => {});
   }, []);
   useEffect(load, [load]);
 
-  const remove = async (id: number) => {
+  const remove = async (id: string) => {
     await api.del(`/api/simulate/scenarios/${id}`);
     load();
   };
@@ -46,7 +49,7 @@ export default function ScenariosPage() {
     );
   }
 
-  const columns = [{ id: 0, name: "Current Business", results: data.current } as Scenario, ...data.scenarios.slice(0, 3)];
+  const columns = [{ id: "current", name: "Current Business", results: data.current } as Scenario, ...data.scenarios.slice(0, 3)];
 
   return (
     <AppShell title="Scenario Comparison">
@@ -69,7 +72,7 @@ export default function ScenariosPage() {
                       <div className="flex items-center justify-end gap-1.5">
                         {c.id === data.best_id && <Crown size={14} className="text-warning" />}
                         <span className={cn("font-semibold", c.id === data.best_id && "text-brand")}>{c.name}</span>
-                        {c.id !== 0 && (
+                        {c.id !== "current" && (
                           <button onClick={() => remove(c.id)} className="text-muted transition-colors hover:text-critical cursor-pointer" aria-label={`Delete ${c.name}`}>
                             <Trash2 size={13} />
                           </button>
@@ -100,20 +103,28 @@ export default function ScenariosPage() {
           </Card>
 
           <div className="grid gap-4 md:grid-cols-3">
-            {data.scenarios.slice(0, 3).map((s) => (
-              <Card key={s.id} className={cn(s.id === data.best_id && "ring-2 ring-brand")}>
-                <div className="flex items-center justify-between">
-                  <CardTitle>{s.name}</CardTitle>
-                  {s.id === data.best_id && <Badge tone="brand"><Crown size={11} /> Winner</Badge>}
-                </div>
-                <p className="mt-2 text-2xl font-bold">{inr(s.results.profit)}</p>
-                <p className="text-xs text-muted">projected monthly profit ({s.results.deltas.profit_pct > 0 ? "+" : ""}{s.results.deltas.profit_pct}% vs current)</p>
-                <div className="mt-3 flex gap-2">
-                  <Badge tone={s.results.risk_score > 60 ? "critical" : s.results.risk_score > 35 ? "medium" : "low"}>Risk {Math.round(s.results.risk_score)}</Badge>
-                  <Badge tone={s.results.health_score >= 70 ? "good" : "medium"}>Health {Math.round(s.results.health_score)}</Badge>
-                </div>
-              </Card>
-            ))}
+            {data.scenarios.slice(0, 3).map((s) => {
+              const h = data.highlights;
+              const tags: { label: string; tone: string }[] = [];
+              if (h?.ai_recommended === s.id) tags.push({ label: "🤖 AI Recommended", tone: "brand" });
+              if (h?.best_profit === s.id) tags.push({ label: "Best for Profit", tone: "good" });
+              if (h?.best_growth === s.id) tags.push({ label: "Best for Growth", tone: "medium" });
+              if (h?.lowest_risk === s.id) tags.push({ label: "Lowest Risk", tone: "low" });
+              return (
+                <Card key={s.id} className={cn(h?.ai_recommended === s.id && "ring-2 ring-brand")}>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>{s.name}</CardTitle>
+                    {s.id === data.best_id && <Crown size={14} className="text-warning" />}
+                  </div>
+                  <p className="mt-2 text-2xl font-bold">{inr(s.results.profit)}</p>
+                  <p className="text-xs text-muted">projected monthly profit ({s.results.deltas.profit_pct > 0 ? "+" : ""}{s.results.deltas.profit_pct}% vs current)</p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {tags.map((t) => <Badge key={t.label} tone={t.tone}>{t.label}</Badge>)}
+                    <Badge tone={s.results.risk_score > 60 ? "critical" : s.results.risk_score > 35 ? "medium" : "low"}>Risk {Math.round(s.results.risk_score)}</Badge>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         </motion.div>
       )}

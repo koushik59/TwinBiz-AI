@@ -15,6 +15,7 @@ export default function SetupPage() {
   const { toast } = useToast();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [startMode, setStartMode] = useState<"demo" | "upload" | "manual">("demo");
   const [form, setForm] = useState({
     name: "",
     business_type: "Supermarket",
@@ -31,9 +32,14 @@ export default function SetupPage() {
   const submit = async () => {
     setLoading(true);
     try {
-      await api.post("/api/business", form);
-      toast("Digital twin created with 365 days of intelligence ✨", "good");
-      router.push("/dashboard");
+      await api.post("/api/business", { ...form, start_mode: startMode });
+      if (startMode === "demo") {
+        toast("Digital twin created with 365 days of demo intelligence ✨", "good");
+        router.push("/dashboard");
+      } else {
+        toast("Twin created — bring in your real data next", "good");
+        router.push(startMode === "upload" ? "/data-center" : "/products");
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to create twin", "critical");
       setLoading(false);
@@ -112,24 +118,32 @@ export default function SetupPage() {
       valid: form.monthly_revenue > 0,
     },
     {
-      title: "Ready to build your twin",
+      title: "How do you want to start?",
       body: (
-        <div className="space-y-3 text-sm text-ink-2">
-          <p>
-            TwinBiz will now generate your digital twin for <strong className="text-ink">{form.name || "your business"}</strong>:
-          </p>
-          <ul className="space-y-2">
-            {[
-              "365 days of realistic sales, expense & customer history",
-              `A ${form.business_type.toLowerCase()} product catalog with live stock levels`,
-              "Employees, suppliers & inventory intelligence",
-              "ML forecasts, risk scan and AI recommendations — ready instantly",
-            ].map((x) => (
-              <li key={x} className="flex items-start gap-2">
-                <Sparkles size={14} className="mt-0.5 shrink-0 text-brand" /> {x}
-              </li>
-            ))}
-          </ul>
+        <div className="space-y-3">
+          {([
+            { key: "demo", title: "Use Demo Supermarket", desc: "365 days of realistic — clearly labeled — demo history, branded catalog, suppliers and staff. Best for exploring instantly." },
+            { key: "upload", title: "Upload Real Business Data", desc: "Start empty, then import your products, sales and expenses from CSV/Excel in the Data Center." },
+            { key: "manual", title: "Manual Setup", desc: "Start empty and add products, suppliers and employees by hand." },
+          ] as const).map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setStartMode(opt.key)}
+              className={`block w-full rounded-xl border p-3.5 text-left transition-all cursor-pointer ${
+                startMode === opt.key ? "border-brand bg-brand-soft shadow-sm" : "border-line hover:border-brand/40"
+              }`}
+            >
+              <p className={`text-sm font-semibold ${startMode === opt.key ? "text-brand" : ""}`}>{opt.title}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-ink-2">{opt.desc}</p>
+            </button>
+          ))}
+          {startMode === "demo" && (
+            <p className="flex items-start gap-2 text-xs text-muted">
+              <Sparkles size={13} className="mt-0.5 shrink-0 text-brand" />
+              Demo data is always labeled DEMO in the app and can be mixed with real imports later.
+            </p>
+          )}
         </div>
       ),
       valid: true,

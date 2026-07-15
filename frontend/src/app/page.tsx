@@ -7,7 +7,6 @@ import {
   ArrowRight,
   Bot,
   Boxes,
-  Check,
   FlaskConical,
   GitCompareArrows,
   LineChart,
@@ -67,16 +66,10 @@ const STEPS = [
   { n: "03", title: "Decide with confidence", desc: "Compare scenarios, read AI recommendations, and roll out only the moves the data supports." },
 ];
 
-const PLANS = [
-  { name: "Starter", price: "Free", tagline: "For exploring your twin", features: ["1 business twin", "Dashboard & analytics", "5 simulations / day", "Risk alerts"], cta: "Get Started" },
-  { name: "Growth", price: "₹999", per: "/mo", tagline: "For serious decision-makers", features: ["Unlimited simulations", "AI Business Advisor", "ML forecasting (90 days)", "Scenario comparison", "PDF & CSV reports"], cta: "Start Free Trial", popular: true },
-  { name: "Enterprise", price: "Custom", tagline: "For chains & franchises", features: ["Multi-branch twins", "Custom ML models", "API access", "Dedicated support"], cta: "Contact Sales" },
-];
-
 const TESTIMONIALS = [
   { quote: "I tested a ₹2 price increase on milk in the simulator first. It predicted the dip in footfall almost exactly — and saved my margin.", name: "Ramesh Gupta", role: "Supermarket owner, Hyderabad" },
   { quote: "The advisor told me hiring one more stylist would pay for itself in 6 weeks. It took 5.", name: "Priya Nair", role: "Salon owner, Kochi" },
-  { quote: "Stockout alerts alone paid for the subscription. We stopped losing weekend sales on our top 10 SKUs.", name: "Arjun Mehta", role: "Pharmacy chain, Pune" },
+  { quote: "Stockout alerts alone stopped us losing weekend sales on our top 10 SKUs.", name: "Arjun Mehta", role: "Pharmacy chain, Pune" },
 ];
 
 const fadeUp = {
@@ -96,7 +89,6 @@ export default function Landing() {
           <nav className="hidden items-center gap-6 text-sm text-ink-2 md:flex">
             <a href="#features" className="hover:text-ink transition-colors">Features</a>
             <a href="#how" className="hover:text-ink transition-colors">How it works</a>
-            <a href="#pricing" className="hover:text-ink transition-colors">Pricing</a>
           </nav>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -208,43 +200,6 @@ export default function Landing() {
               </motion.div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* pricing */}
-      <section id="pricing" className="mx-auto max-w-6xl px-4 py-20">
-        <motion.h2 {...fadeUp} className="text-center text-3xl font-bold tracking-tight md:text-4xl">Simple pricing</motion.h2>
-        <div className="mt-12 grid gap-5 md:grid-cols-3">
-          {PLANS.map((p, i) => (
-            <motion.div
-              key={p.name}
-              {...fadeUp}
-              transition={{ ...fadeUp.transition, delay: i * 0.08 }}
-              className={`glass relative rounded-2xl p-6 ${p.popular ? "ring-2 ring-brand shadow-xl shadow-brand/15" : ""}`}
-            >
-              {p.popular && (
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-brand to-brand-2 px-3 py-0.5 text-[11px] font-bold text-white">
-                  Most Popular
-                </span>
-              )}
-              <h3 className="font-semibold">{p.name}</h3>
-              <p className="mt-2 text-3xl font-bold">
-                {p.price}
-                {p.per && <span className="text-sm font-normal text-muted">{p.per}</span>}
-              </p>
-              <p className="mt-1 text-xs text-muted">{p.tagline}</p>
-              <ul className="mt-5 space-y-2.5">
-                {p.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2 text-sm text-ink-2">
-                    <Check size={15} className="mt-0.5 shrink-0 text-good" /> {f}
-                  </li>
-                ))}
-              </ul>
-              <Link href="/register" className="mt-6 block">
-                <Button variant={p.popular ? "primary" : "outline"} className="w-full">{p.cta}</Button>
-              </Link>
-            </motion.div>
-          ))}
         </div>
       </section>
 

@@ -2,29 +2,25 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
-from ..database import get_db
-from ..models import Business, DailyMetric, Product, ProductSale
+from ..database import get_db, oid
+from ..models import Business, DailyMetric, find_models, to_dt
 from ..security import get_current_business
-from ..services.insights import compute_kpis, health_score
+from ..services.insights import compute_kpis, health_score, twin_status
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
-def _series(db: Session, business_id: int, days: int) -> list[DailyMetric]:
-    since = date.today() - timedelta(days=days)
-    return (
-        db.query(DailyMetric)
-        .filter(DailyMetric.business_id == business_id, DailyMetric.day >= since)
-        .order_by(DailyMetric.day)
-        .all()
-    )
+def _series(db: Database, business_id: str, days: int) -> list[DailyMetric]:
+    since = to_dt(date.today() - timedelta(days=days))
+    return find_models(db, DailyMetric,
+                       {"business_id": business_id, "day": {"$gte": since}},
+                       sort=[("day", 1)])
 
 
 @router.get("/dashboard")
-def dashboard(business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def dashboard(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     kpis = compute_kpis(db, business)
     health = health_score(db, business)
     rows = _series(db, business.id, 90)
@@ -48,18 +44,22 @@ def dashboard(business: Business = Depends(get_current_business), db: Session = 
         for k, v in sorted(weekly.items())
     ][:-1]  # drop incomplete current week
 
-    # top products (last 30 days)
-    since = date.today() - timedelta(days=30)
-    top = (
-        db.query(Product.name, func.sum(ProductSale.units).label("units"),
-                 func.sum(ProductSale.revenue).label("revenue"))
-        .join(Product, Product.id == ProductSale.product_id)
-        .filter(ProductSale.business_id == business.id, ProductSale.day >= since)
-        .group_by(Product.name)
-        .order_by(func.sum(ProductSale.revenue).desc())
-        .limit(7)
-        .all()
-    )
+    # top products (last 30 days): group sales by product, then merge by name
+    since = to_dt(date.today() - timedelta(days=30))
+    grouped = list(db.product_sales.aggregate([
+        {"$match": {"business_id": business.id, "day": {"$gte": since}}},
+        {"$group": {"_id": "$product_id", "units": {"$sum": "$units"},
+                    "revenue": {"$sum": "$revenue"}}},
+    ]))
+    names = {str(d["_id"]): d.get("name", "Unknown") for d in db.products.find(
+        {"_id": {"$in": [oid(g["_id"]) for g in grouped]}}, {"name": 1})}
+    by_name: dict[str, dict] = {}
+    for g in grouped:
+        n = names.get(g["_id"], "Unknown")
+        agg = by_name.setdefault(n, {"name": n, "units": 0, "revenue": 0.0})
+        agg["units"] += int(g["units"] or 0)
+        agg["revenue"] += float(g["revenue"] or 0)
+    top = sorted(by_name.values(), key=lambda x: -x["revenue"])[:7]
 
     # peak hours profile (derived deterministic curve scaled to real footfall)
     hours = list(range(9, 22))
@@ -73,15 +73,16 @@ def dashboard(business: Business = Depends(get_current_business), db: Session = 
     return {
         "kpis": kpis,
         "health": health,
+        "twin_status": twin_status(db, business),
         "trend": trend,
         "weekly_trend": weekly_trend,
-        "top_products": [{"name": n, "units": int(u or 0), "revenue": float(r or 0)} for n, u, r in top],
+        "top_products": top,
         "peak_hours": peak,
     }
 
 
 @router.get("/finance")
-def finance(business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def finance(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     rows = _series(db, business.id, 365)
     monthly = defaultdict(lambda: {"revenue": 0.0, "expenses": 0.0})
     for r in rows:
@@ -133,7 +134,7 @@ def finance(business: Business = Depends(get_current_business), db: Session = De
 
 
 @router.get("/customers")
-def customers(business: Business = Depends(get_current_business), db: Session = Depends(get_db)):
+def customers(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
     rows = _series(db, business.id, 180)
     trend = [
         {"day": r.day.isoformat(), "customers": r.customers, "new_customers": r.new_customers,
@@ -148,6 +149,36 @@ def customers(business: Business = Depends(get_current_business), db: Session = 
     avg_ticket = rev / max(sum(r.orders for r in last30), 1)
     visits_per_customer = total / max(business.customer_count, 1)
     clv = avg_ticket * visits_per_customer * 12  # 12-month horizon
+
+    # ---- aggregate segment estimate (no individual customer records) -------
+    # Shares are derived from retention and new-customer mix; clearly labeled
+    # in the UI as "aggregate estimate", never per-person predictions.
+    ret_frac = retention / 100
+    churn_frac = 1 - ret_frac
+    segments = [
+        {"name": "Loyal", "share_pct": round(ret_frac * 42, 1),
+         "behaviour": "Visit weekly+, low price sensitivity, first to adopt new products"},
+        {"name": "Regular", "share_pct": round(ret_frac * 34, 1),
+         "behaviour": "Visit 1-2×/month, moderate price sensitivity"},
+        {"name": "Occasional", "share_pct": round(ret_frac * 24, 1),
+         "behaviour": "Irregular visits, respond mainly to offers"},
+        {"name": "New", "share_pct": round(new / total * 100, 1),
+         "behaviour": "First 30 days — retention decided by first 2-3 experiences"},
+        {"name": "At Risk", "share_pct": round(min(churn_frac * 55, 30), 1),
+         "behaviour": "Declining visit frequency — win back with targeted offers"},
+    ]
+
+    # elasticity-grounded behaviour predictions at the aggregate level
+    from ..services.simulation import PRICE_ELASTICITY
+    elasticity = PRICE_ELASTICITY.get(business.business_type, -1.5)
+    predictions = {
+        "return_probability_pct": round(ret_frac * 100 * 0.92, 0),
+        "discount_response": f"A 10% offer is predicted to lift demand ~{abs(elasticity) * 8 * 0.8:.0f}%",
+        "price_increase_response": f"A 5% price rise is predicted to cost ~{abs(elasticity) * 5:.0f}% of demand",
+        "new_product_adoption_pct": round(28 + ret_frac * 30, 0),
+        "label": ("Aggregate estimate from daily footfall history — "
+                  "no individual customer records are used."),
+    }
     return {
         "trend": trend,
         "summary": {
@@ -155,4 +186,6 @@ def customers(business: Business = Depends(get_current_business), db: Session = 
             "retention_pct": retention, "churn_pct": round(100 - retention, 1),
             "avg_ticket": round(avg_ticket, 0), "clv": round(clv, 0),
         },
+        "segments": segments,
+        "predictions": predictions,
     }

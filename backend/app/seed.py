@@ -6,19 +6,41 @@ import math
 import random
 from datetime import date, timedelta
 
-from sqlalchemy.orm import Session
+from pymongo.database import Database
 
+from .database import next_seq, oid
 from .models import Business, DailyMetric, Employee, Product, ProductSale, Supplier
 
+# (name, brand, category, unit_size, price, cost, stock, expiry_days, storage)
+SUPERMARKET_CATALOG = [
+    ("Amul Milk 500ml", "Amul", "Dairy", "500ml", 28, 24, 140, 4, "refrigerated"),
+    ("Amul Butter 100g", "Amul", "Dairy", "100g", 60, 52, 60, 90, "refrigerated"),
+    ("Britannia Bread", "Britannia", "Bakery", "400g", 45, 32, 90, 3, "ambient"),
+    ("India Gate Rice 5kg", "India Gate", "Rice & Grains", "5kg", 420, 350, 60, 0, "ambient"),
+    ("Aashirvaad Atta 5kg", "Aashirvaad", "Rice & Grains", "5kg", 260, 218, 45, 0, "ambient"),
+    ("Fortune Oil 1L", "Fortune", "Rice & Grains", "1L", 180, 152, 45, 0, "ambient"),
+    ("Eggs (12 pack)", "Local Farm", "Dairy", "12 pcs", 84, 66, 70, 10, "refrigerated"),
+    ("Parle-G Biscuits", "Parle", "Snacks", "250g", 30, 20, 200, 90, "ambient"),
+    ("Maggi Noodles 4-pack", "Nestle", "Snacks", "280g", 56, 44, 160, 180, "ambient"),
+    ("Lays Chips", "Lays", "Snacks", "90g", 20, 14, 180, 60, "ambient"),
+    ("Coca-Cola 2L", "Coca-Cola", "Beverages", "2L", 95, 70, 80, 120, "ambient"),
+    ("Thums Up 750ml", "Coca-Cola", "Beverages", "750ml", 45, 33, 100, 120, "ambient"),
+    ("Tata Tea Gold 500g", "Tata", "Beverages", "500g", 260, 205, 50, 0, "ambient"),
+    ("Tata Salt 1kg", "Tata", "Rice & Grains", "1kg", 28, 21, 120, 0, "ambient"),
+    ("Surf Excel 1kg", "HUL", "Household", "1kg", 210, 160, 40, 0, "ambient"),
+    ("Vim Dishwash Bar", "HUL", "Household", "200g", 20, 13, 150, 0, "ambient"),
+    ("Colgate Toothpaste", "Colgate", "Personal Care", "150g", 95, 68, 70, 0, "ambient"),
+    ("Dove Shampoo 340ml", "HUL", "Personal Care", "340ml", 240, 175, 35, 0, "ambient"),
+    ("Bananas (1 dozen)", "Local", "Fruits", "12 pcs", 60, 42, 50, 4, "ambient"),
+    ("Onions 1kg", "Local", "Vegetables", "1kg", 35, 26, 80, 12, "ambient"),
+    ("Tomatoes 1kg", "Local", "Vegetables", "1kg", 40, 29, 70, 6, "ambient"),
+    ("Amul Ice Cream 1L", "Amul", "Frozen Foods", "1L", 180, 135, 30, 240, "frozen"),
+    ("Dairy Milk Chocolate", "Cadbury", "Snacks", "110g", 95, 71, 90, 180, "ambient"),
+    ("Regular Lassi 200ml", "Amul", "Dairy", "200ml", 25, 19, 80, 5, "refrigerated"),
+]
+
 PRODUCT_CATALOG = {
-    "Supermarket": [
-        ("Milk 1L", "Dairy", 62, 54, 120, 4), ("Bread", "Bakery", 45, 32, 90, 3),
-        ("Rice 5kg", "Staples", 420, 350, 60, 0), ("Cooking Oil 1L", "Staples", 180, 152, 45, 0),
-        ("Eggs (12)", "Dairy", 84, 66, 70, 10), ("Biscuits", "Snacks", 30, 20, 200, 90),
-        ("Detergent 1kg", "Household", 210, 160, 40, 0), ("Shampoo", "Personal Care", 240, 175, 35, 0),
-        ("Cold Drink 2L", "Beverages", 95, 70, 80, 120), ("Atta 10kg", "Staples", 480, 410, 30, 0),
-        ("Tea 500g", "Beverages", 260, 205, 50, 0), ("Chocolates", "Snacks", 50, 34, 150, 180),
-    ],
+    "Supermarket": [(n, c, p, co, s, e) for (n, _b, c, _u, p, co, s, e, _st) in SUPERMARKET_CATALOG],
     "Restaurant": [
         ("Veg Thali", "Mains", 180, 95, 999, 1), ("Paneer Butter Masala", "Mains", 260, 130, 999, 1),
         ("Biryani", "Mains", 280, 140, 999, 1), ("Masala Dosa", "Breakfast", 120, 55, 999, 1),
@@ -62,49 +84,61 @@ def _festival_boost(d: date) -> float:
     return boost
 
 
-def seed_business(db: Session, business: Business) -> None:
-    rng = random.Random(business.id * 7919)
+def seed_business(db: Database, business: Business) -> None:
+    rng = random.Random(int(business.id[-8:], 16) * 7919)
     catalog = PRODUCT_CATALOG.get(business.business_type, PRODUCT_CATALOG[DEFAULT_TYPE])
+    sku_prefix = business.id[-4:].upper()
 
     # --- products ---------------------------------------------------------
     products: list[Product] = []
     scale = business.monthly_revenue / 500000.0  # size twin to declared revenue
+    rich = {n: (b, u, st) for (n, b, _c, u, _p, _co, _s, _e, st) in SUPERMARKET_CATALOG}
     for name, cat, price, cost, stock, expiry in catalog:
-        p = Product(
+        brand, unit_size, storage = rich.get(name, ("", "", "ambient"))
+        stock_n = max(int(stock * scale * rng.uniform(0.7, 1.3)), 5)
+        products.append(Product(
             business_id=business.id, name=name, category=cat, price=price, cost=cost,
-            stock=max(int(stock * scale * rng.uniform(0.7, 1.3)), 5),
+            stock=stock_n,
             reorder_level=max(int(stock * 0.25), 5),
             daily_demand=round(stock / 12 * scale * rng.uniform(0.6, 1.4), 1),
             expiry_days=expiry,
-        )
-        products.append(p)
-        db.add(p)
+            sku=f"SKU-{sku_prefix}-{next_seq(db, f'sku:{business.id}'):04d}",
+            brand=brand or None, unit_size=unit_size or None,
+            unit_type="pcs", storage_type=storage,
+            mrp=round(price * 1.08, 0), tax_rate=5.0,
+            min_stock=max(int(stock * 0.1), 3), max_stock=int(stock * 2.5),
+            safety_stock=max(int(stock * 0.15), 3), reorder_qty=max(int(stock * 0.8), 10),
+            supplier_cost=round(cost * 0.97, 2), lead_time_days=rng.randint(1, 5),
+            moq=10, is_demo=1,
+        ))
+    inserted = db.products.insert_many([p.to_doc() for p in products])
+    for p, _id in zip(products, inserted.inserted_ids):
+        p.id = str(_id)
+    db.businesses.update_one({"_id": oid(business.id)}, {"$set": {"data_source": "demo"}})
+    business.data_source = "demo"
 
     # --- employees & suppliers ---------------------------------------------
-    for i in range(business.employees_count):
-        db.add(Employee(
-            business_id=business.id, name=EMPLOYEE_NAMES[i % len(EMPLOYEE_NAMES)],
-            role=ROLES[0] if i == 0 else ROLES[1 + i % (len(ROLES) - 1)],
-            salary=32000 if i == 0 else rng.randint(14000, 22000),
-            department="Management" if i == 0 else "Operations",
-            performance=round(rng.uniform(0.6, 0.97), 2),
-        ))
-    for name, cat in SUPPLIER_NAMES[:4]:
-        db.add(Supplier(
-            business_id=business.id, name=name, category=cat,
-            reliability=round(rng.uniform(0.75, 0.98), 2),
-            lead_time_days=rng.randint(1, 7),
-            cost_index=round(rng.uniform(0.92, 1.1), 2),
-        ))
-    db.flush()
+    employees = [Employee(
+        business_id=business.id, name=EMPLOYEE_NAMES[i % len(EMPLOYEE_NAMES)],
+        role=ROLES[0] if i == 0 else ROLES[1 + i % (len(ROLES) - 1)],
+        salary=32000 if i == 0 else rng.randint(14000, 22000),
+        department="Management" if i == 0 else "Operations",
+        performance=round(rng.uniform(0.6, 0.97), 2),
+    ) for i in range(business.employees_count)]
+    if employees:
+        db.employees.insert_many([e.to_doc() for e in employees])
+    db.suppliers.insert_many([Supplier(
+        business_id=business.id, name=name, category=cat,
+        reliability=round(rng.uniform(0.75, 0.98), 2),
+        lead_time_days=rng.randint(1, 7),
+        cost_index=round(rng.uniform(0.92, 1.1), 2),
+    ).to_doc() for name, cat in SUPPLIER_NAMES[:4]])
 
     # --- 365 days of history ---------------------------------------------------
     today = date.today()
     base_daily_rev = business.monthly_revenue / 30.0
     base_daily_customers = business.customer_count / 30.0 if business.customer_count else 40
     weekday_mult = [0.86, 0.90, 0.94, 0.98, 1.08, 1.28, 1.22]  # Mon..Sun
-    weights = [max(p.daily_demand * p.price, 1) for p in products]
-    total_w = sum(weights)
 
     metrics, sales_rows = [], []
     for i in range(365):
@@ -123,18 +157,18 @@ def seed_business(db: Session, business: Business) -> None:
             customers=customers, orders=orders,
             new_customers=max(int(customers * rng.uniform(0.05, 0.14)), 1),
             inventory_value=round(sum(p.stock * p.cost for p in products) * rng.uniform(0.85, 1.15), 0),
-        ))
-        # product-level sales for the last 120 days (enough for velocity analytics)
+        ).to_doc())
+        # product-level sales for the last 120 days (enough for velocity analytics);
+        # units track each product's configured daily demand so velocities are consistent
         if i >= 245:
-            for p, w in zip(products, weights):
-                share = w / total_w
-                units = max(int(orders * share * rng.uniform(0.5, 1.6) * 3), 0)
+            for p in products:
+                units = max(int(p.daily_demand * mult * rng.gauss(1.0, 0.18)), 0)
                 if units:
                     sales_rows.append(ProductSale(
                         business_id=business.id, product_id=p.id, day=d,
                         units=units, revenue=round(units * p.price, 0),
-                    ))
+                    ).to_doc())
 
-    db.add_all(metrics)
-    db.add_all(sales_rows)
-    db.commit()
+    db.daily_metrics.insert_many(metrics)
+    if sales_rows:
+        db.product_sales.insert_many(sales_rows)

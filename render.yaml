@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: twinbiz-ai
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: MONGODB_URI
+        sync: false          # set in the Render dashboard (Atlas SRV connection string)
+      - key: MONGODB_DB
+        value: twinbiz
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false          # optional — advisor falls back to the Twin Engine
+      - key: CORS_ORIGINS
+        value: https://twin-biz-ai.vercel.app,http://localhost:3000
