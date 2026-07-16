@@ -72,30 +72,26 @@ const NAV = [
   ]},
 ];
 
+const THEME_EVENT = "twinbiz-theme-change";
+
 export function useTheme() {
+  // Single source of truth is the `dark` class on <html>, applied before first
+  // paint by the inline script in layout.tsx (default: dark). The theme only
+  // ever changes through toggle() — never from system preference or navigation.
   const [dark, setDark] = useState(true);
   useEffect(() => {
-    // auto mode: follow the system preference until the user explicitly toggles
-    const stored = localStorage.getItem("twinbiz_theme");
-    const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const isDark = stored ? stored === "dark" : systemDark;
-    setDark(isDark);
-    document.documentElement.classList.toggle("dark", isDark);
-    if (stored) return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = (e: MediaQueryListEvent) => {
-      if (localStorage.getItem("twinbiz_theme")) return; // manual choice wins
-      setDark(e.matches);
-      document.documentElement.classList.toggle("dark", e.matches);
-    };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
+    setDark(document.documentElement.classList.contains("dark"));
+    const onChange = (e: Event) => setDark((e as CustomEvent<boolean>).detail);
+    window.addEventListener(THEME_EVENT, onChange);
+    return () => window.removeEventListener(THEME_EVENT, onChange);
   }, []);
   const toggle = () => {
-    const next = !dark;
-    setDark(next);
+    // read the live class instead of closure state so every toggle instance
+    // (header button, settings page) flips correctly even if its state is stale
+    const next = !document.documentElement.classList.contains("dark");
     document.documentElement.classList.toggle("dark", next);
     localStorage.setItem("twinbiz_theme", next ? "dark" : "light");
+    window.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: next }));
   };
   return { dark, toggle };
 }
@@ -127,6 +123,11 @@ export function Logo({ compact = false }: { compact?: boolean }) {
     </Link>
   );
 }
+
+// Sidebar scroll position, remembered across page navigations. Each page mounts
+// its own AppShell, which would otherwise reset the nav's scroll to the top
+// every time a lower menu item is clicked.
+let sidebarScrollTop = 0;
 
 export function AppShell({ children, title }: { children: React.ReactNode; title: string }) {
   const pathname = usePathname();
@@ -162,7 +163,15 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
           <X size={18} />
         </button>
       </div>
-      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
+      <nav
+        ref={(el) => {
+          if (el) el.scrollTop = sidebarScrollTop; // restore before paint
+        }}
+        onScroll={(e) => {
+          sidebarScrollTop = e.currentTarget.scrollTop;
+        }}
+        className="flex-1 space-y-5 overflow-y-auto px-3 pb-4"
+      >
         {NAV.map((group) => (
           <div key={group.group}>
             <p className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">{group.group}</p>

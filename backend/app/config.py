@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     jwt_expiry_minutes: int = 60 * 24 * 7
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
+    # Google OAuth Web client ID (same value as NEXT_PUBLIC_GOOGLE_CLIENT_ID on the frontend).
+    # Leave empty to disable "Continue with Google".
+    google_client_id: str = ""
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000,https://twin-biz-ai.vercel.app"
 
     class Config:

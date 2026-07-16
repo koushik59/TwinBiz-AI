@@ -42,8 +42,8 @@ customers and risk *before spending real money*.
 Plus: JWT auth, setup wizard with **Demo / Upload / Manual start modes**, clearly-labeled
 365-day demo dataset (weekly seasonality, Indian festival spikes, growth trend), twin status
 header (LIVE / DEMO / STALE + data quality + confidence), a "How was this predicted?" panel on
-every simulation, customer segments & behaviour predictions (aggregate, labeled), dark/light/auto
-theme, glassmorphism UI, Framer-Motion animations, fully responsive.
+every simulation, customer segments & behaviour predictions (aggregate, labeled), dark/light
+theme (user-controlled, persisted), glassmorphism UI, Framer-Motion animations, fully responsive.
 
 **Every prediction is deterministic and explainable — no random numbers, and demo data is never
 passed off as real.** Engine tests: `cd backend && .venv/Scripts/python -m pytest tests/` ·
