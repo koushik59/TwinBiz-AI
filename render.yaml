@@ -15,5 +15,7 @@ services:
         generateValue: true
       - key: GEMINI_API_KEY
         sync: false          # optional — advisor falls back to the Twin Engine
+      - key: GOOGLE_CLIENT_ID
+        sync: false          # optional — enables "Continue with Google"
       - key: CORS_ORIGINS
         value: https://twin-biz-ai.vercel.app,http://localhost:3000

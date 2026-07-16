@@ -13,7 +13,7 @@ type Business = {
 };
 type Me = { full_name: string; email: string; role: string };
 
-const TYPES = ["Supermarket", "Retail", "Restaurant", "Pharmacy", "Salon", "Bakery", "Warehouse", "Manufacturing", "Education"];
+const TYPES = ["Supermarket", "Retail", "Restaurant", "Pharmacy", "Bakery", "Warehouse", "Manufacturing"];
 
 export default function SettingsPage() {
   const { toast } = useToast();
