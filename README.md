@@ -11,7 +11,6 @@ customers and risk *before spending real money*.
 
 📖 **New user?** Start with the [User Manual](docs/USER_MANUAL.md) — a plain-language guide to every feature.
 
----
 
 ## ✨ Features
 
