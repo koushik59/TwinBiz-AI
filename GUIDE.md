@@ -178,6 +178,8 @@ twin's real trailing-30-day history, not made-up numbers.
 **Quick What-Ifs**: one-click presets (increase price 10%, hire 2, festival offer, double
 marketing, cheaper supplier…). **Save as Scenario** stores the current slider setup + results.
 
+--- 
+
 ### ⚖️ Scenario Comparison (`/scenarios`)
 Compares **Current Business vs up to 3 saved scenarios** in a table across revenue, profit,
 expenses, customers, inventory, satisfaction, risk and health. The best value per row is

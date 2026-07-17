@@ -107,12 +107,16 @@ class Business(MongoModel):
 
 class Product(MongoModel):
     COLLECTION: ClassVar[str] = "products"
+    DATE_FIELDS: ClassVar[tuple[str, ...]] = ("sale_ends",)
 
     business_id: str
     name: str
     category: str = "General"
-    price: float = 100.0   # current selling price
+    price: float = 100.0   # regular selling price
     cost: float = 70.0     # cost price
+    # temporary promotional price; active while set and (sale_ends is empty or not past)
+    sale_price: float | None = None
+    sale_ends: date | None = None
     stock: int = 100
     reorder_level: int = 30  # reorder point
     daily_demand: float = 10.0
@@ -139,6 +143,31 @@ class Product(MongoModel):
     storage_type: str | None = None   # ambient/refrigerated/frozen
     shelf_location: str | None = None
     is_demo: int = 0  # 1 = seeded demo row
+
+
+def sale_active(p: "Product") -> bool:
+    return p.sale_price is not None and p.sale_price > 0 and (
+        p.sale_ends is None or p.sale_ends >= date.today())
+
+
+def effective_price(p: "Product") -> float:
+    """What a customer pays right now: the active sale price, else the regular price."""
+    return float(p.sale_price) if sale_active(p) else float(p.price)
+
+
+class StockAdjustment(MongoModel):
+    """Audit log of manual stock changes (deliveries received, damage, corrections)."""
+
+    COLLECTION: ClassVar[str] = "stock_adjustments"
+
+    business_id: str
+    product_id: str
+    product_name: str
+    delta: int                 # +received / -removed
+    reason: str = "correction"  # delivery | damaged | expired | theft | correction
+    note: str = ""
+    stock_after: int = 0
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class Employee(MongoModel):
@@ -270,6 +299,31 @@ class ChatMessage(MongoModel):
     business_id: str
     role: str  # user | assistant
     content: str
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Bill(MongoModel):
+    """A point-of-sale bill. Creating one decrements stock and feeds the day's
+    real sales into the twin (product_sales + daily_metrics)."""
+
+    COLLECTION: ClassVar[str] = "bills"
+    DATE_FIELDS: ClassVar[tuple[str, ...]] = ("day",)
+
+    business_id: str
+    bill_no: str
+    status: str = "paid"  # paid | cancelled
+    customer_name: str = ""
+    customer_phone: str = ""
+    payment_method: str = "cash"  # cash | upi | card
+    # line items: {product_id, name, qty, unit_price, tax_rate, line_total}
+    items: list[dict] = Field(default_factory=list)
+    subtotal: float = 0.0
+    discount_pct: float = 0.0
+    discount_amount: float = 0.0
+    total: float = 0.0
+    tax_included: float = 0.0     # informational: GST portion inside the total
+    counted_new_customer: int = 0  # 1 if this bill's phone was seen for the first time
+    day: date
     created_at: datetime = Field(default_factory=utcnow)
 
 

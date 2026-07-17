@@ -5,10 +5,11 @@ import { Badge, Button, Card, EmptyState, Input, Label, Modal, PageSkeleton, Sel
 import { api, ApiError } from "@/lib/api";
 import { cn, inr, num } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { ArrowDownAZ, ArrowUpZA, Boxes, ChevronLeft, ChevronRight, PackagePlus, Pencil, Percent, ShoppingBasket, Trash2, TriangleAlert } from "lucide-react";
+import { ArrowDownAZ, ArrowUpZA, Boxes, ChevronLeft, ChevronRight, PackagePlus, Pencil, Percent, ShoppingBasket, Tag, Trash2, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 type Product = {
+  on_sale: boolean; effective_price: number; sale_price: number | null; sale_ends: string | null;
   id: string; name: string; sku: string | null; barcode: string | null; brand: string | null;
   category: string; subcategory: string | null; description: string | null;
   unit_type: string | null; unit_size: string | null;
@@ -101,6 +102,11 @@ export default function ProductsPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<Product | null>(null);
 
+  const [stockFor, setStockFor] = useState<Product | null>(null);
+  const [stockForm, setStockForm] = useState({ mode: "add", qty: "", reason: "delivery", note: "" });
+  const [saleFor, setSaleFor] = useState<Product | null>(null);
+  const [saleForm, setSaleForm] = useState({ price: "", ends: "" });
+
   const load = useCallback(() => {
     const params = new URLSearchParams({
       search, category, sort, order, page: String(page), page_size: String(pageSize),
@@ -159,6 +165,51 @@ export default function ProductsPage() {
       load();
     } catch {
       toast("Failed to delete product", "critical");
+    }
+  };
+
+  const adjustStock = async () => {
+    if (!stockFor) return;
+    const qty = Math.abs(Number(stockForm.qty) || 0);
+    if (qty <= 0) { toast("Enter a quantity above 0", "critical"); return; }
+    const delta = stockForm.mode === "add" ? qty : -qty;
+    try {
+      await api.post(`/api/products/${stockFor.id}/stock`, {
+        delta, reason: stockForm.mode === "add" ? "delivery" : stockForm.reason, note: stockForm.note,
+      });
+      toast(`${stockFor.name}: stock ${delta > 0 ? "+" : ""}${delta} recorded`, "good");
+      setStockFor(null);
+      load();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Could not adjust stock", "critical");
+    }
+  };
+
+  const applySale = async () => {
+    if (!saleFor) return;
+    const price = Number(saleForm.price);
+    if (!price || price <= 0) { toast("Enter a valid sale price", "critical"); return; }
+    try {
+      await api.put(`/api/products/${saleFor.id}/sale`, {
+        sale_price: price, sale_ends: saleForm.ends || null,
+      });
+      toast(`${saleFor.name} on sale at ₹${price}${saleForm.ends ? ` until ${saleForm.ends}` : ""} — billing charges it automatically`, "good");
+      setSaleFor(null);
+      load();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Could not set the sale price", "critical");
+    }
+  };
+
+  const clearSale = async () => {
+    if (!saleFor) return;
+    try {
+      await api.del(`/api/products/${saleFor.id}/sale`);
+      toast(`${saleFor.name} back to regular price`, "brand");
+      setSaleFor(null);
+      load();
+    } catch {
+      toast("Could not remove the sale", "critical");
     }
   };
 
@@ -236,17 +287,36 @@ export default function ProductsPage() {
                         </p>
                       </td>
                       <td className="px-4 py-3 text-ink-2">{p.category}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{inr(p.price, false)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {p.on_sale ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <Badge tone="good">SALE</Badge>
+                            <span className="font-semibold">{inr(p.effective_price, false)}</span>
+                            <span className="text-xs text-muted line-through">{inr(p.price, false)}</span>
+                          </span>
+                        ) : inr(p.price, false)}
+                      </td>
                       <td className="px-4 py-3 text-right tabular-nums text-ink-2">{inr(p.cost, false)}</td>
                       <td className={cn("px-4 py-3 text-right font-medium tabular-nums", p.margin_pct < 8 ? "text-critical" : "text-ink-2")}>{p.margin_pct}%</td>
                       <td className="px-4 py-3 text-right tabular-nums">{num(p.stock)}</td>
                       <td className="px-4 py-3"><Badge tone={p.stock_status}>{p.stock_status}</Badge></td>
                       <td className="px-4 py-3 text-right">
-                        <button onClick={() => openEdit(p)} aria-label={`Edit ${p.name}`}
+                        <button onClick={() => { setStockFor(p); setStockForm({ mode: "add", qty: "", reason: "damaged", note: "" }); }}
+                                aria-label={`Adjust stock of ${p.name}`} title="Adjust stock"
+                                className="rounded-lg p-1.5 text-ink-2 hover:bg-brand-soft hover:text-brand cursor-pointer">
+                          <PackagePlus size={15} />
+                        </button>
+                        <button onClick={() => { setSaleFor(p); setSaleForm({ price: p.sale_price ? String(p.sale_price) : "", ends: p.sale_ends ?? "" }); }}
+                                aria-label={`Sale price for ${p.name}`} title="Temporary sale price"
+                                className={cn("rounded-lg p-1.5 cursor-pointer",
+                                  p.on_sale ? "text-[var(--delta-good)] hover:bg-brand-soft" : "text-ink-2 hover:bg-brand-soft hover:text-brand")}>
+                          <Tag size={15} />
+                        </button>
+                        <button onClick={() => openEdit(p)} aria-label={`Edit ${p.name}`} title="Edit"
                                 className="rounded-lg p-1.5 text-ink-2 hover:bg-brand-soft hover:text-brand cursor-pointer">
                           <Pencil size={15} />
                         </button>
-                        <button onClick={() => setDeleting(p)} aria-label={`Delete ${p.name}`}
+                        <button onClick={() => setDeleting(p)} aria-label={`Delete ${p.name}`} title="Delete"
                                 className="rounded-lg p-1.5 text-ink-2 hover:bg-critical/10 hover:text-critical cursor-pointer">
                           <Trash2 size={15} />
                         </button>
@@ -346,6 +416,82 @@ export default function ProductsPage() {
         <div className="mt-5 flex justify-end gap-2 border-t border-line pt-4">
           <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
           <Button onClick={save} disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Add Product"}</Button>
+        </div>
+      </Modal>
+
+      {/* stock adjust */}
+      <Modal open={!!stockFor} onClose={() => setStockFor(null)} title={`Adjust stock — ${stockFor?.name ?? ""}`}>
+        <p className="text-xs text-muted">Current stock: <strong className="text-ink">{num(stockFor?.stock)}</strong> units.
+          Adjustments are logged with a reason so your inventory trail stays auditable.</p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label>Action</Label>
+            <Select value={stockForm.mode} onChange={(e) => setStockForm({ ...stockForm, mode: e.target.value })}>
+              <option value="add">Receive stock (+)</option>
+              <option value="remove">Remove stock (−)</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Quantity</Label>
+            <Input type="number" min={1} value={stockForm.qty} autoFocus
+                   onChange={(e) => setStockForm({ ...stockForm, qty: e.target.value })} placeholder="e.g. 50" />
+          </div>
+          {stockForm.mode === "remove" && (
+            <div>
+              <Label>Reason</Label>
+              <Select value={stockForm.reason} onChange={(e) => setStockForm({ ...stockForm, reason: e.target.value })}>
+                <option value="damaged">Damaged</option>
+                <option value="expired">Expired</option>
+                <option value="theft">Theft / loss</option>
+                <option value="correction">Count correction</option>
+              </Select>
+            </div>
+          )}
+          <div className={stockForm.mode === "remove" ? "" : "sm:col-span-2"}>
+            <Label>Note (optional)</Label>
+            <Input value={stockForm.note} onChange={(e) => setStockForm({ ...stockForm, note: e.target.value })}
+                   placeholder={stockForm.mode === "add" ? "e.g. Metro Wholesale delivery" : "e.g. cold storage failure"} />
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setStockFor(null)}>Cancel</Button>
+          <Button onClick={adjustStock}>{stockForm.mode === "add" ? "Receive stock" : "Remove stock"}</Button>
+        </div>
+      </Modal>
+
+      {/* temporary sale price */}
+      <Modal open={!!saleFor} onClose={() => setSaleFor(null)} title={`Temporary sale price — ${saleFor?.name ?? ""}`}>
+        <p className="text-xs text-muted">
+          Regular price <strong className="text-ink">{inr(saleFor?.price, false)}</strong> · cost {inr(saleFor?.cost, false)}.
+          While the sale is active, <strong className="text-ink">Billing charges this price automatically</strong>;
+          it reverts on the end date (or when you remove it).
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label>Sale price (₹)</Label>
+            <Input type="number" min={1} value={saleForm.price} autoFocus
+                   onChange={(e) => setSaleForm({ ...saleForm, price: e.target.value })}
+                   placeholder={saleFor ? String(Math.round(saleFor.price * 0.9)) : ""} />
+          </div>
+          <div>
+            <Label>Ends on (optional)</Label>
+            <Input type="date" value={saleForm.ends}
+                   onChange={(e) => setSaleForm({ ...saleForm, ends: e.target.value })} />
+          </div>
+        </div>
+        {saleFor && Number(saleForm.price) > 0 && Number(saleForm.price) < saleFor.cost && (
+          <p className="mt-2 text-xs font-medium text-critical">
+            ⚠ Below cost ({inr(saleFor.cost, false)}) — you&apos;ll lose money on every unit. Fine for clearance, just so you know.
+          </p>
+        )}
+        <div className="mt-5 flex justify-between gap-2">
+          {saleFor?.on_sale ? (
+            <Button variant="outline" onClick={clearSale}>Remove sale</Button>
+          ) : <span />}
+          <span className="flex gap-2">
+            <Button variant="outline" onClick={() => setSaleFor(null)}>Cancel</Button>
+            <Button onClick={applySale}>{saleFor?.on_sale ? "Update sale" : "Start sale"}</Button>
+          </span>
         </div>
       </Modal>
 
