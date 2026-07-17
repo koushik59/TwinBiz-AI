@@ -22,12 +22,14 @@ import {
   Moon,
   Network,
   Radar,
+  ReceiptText,
   Rocket,
   Settings,
   ShieldAlert,
   ShoppingBasket,
   Sparkles,
   Sun,
+  UserCog,
   Users,
   Wallet,
   X,
@@ -39,6 +41,7 @@ import { useEffect, useState } from "react";
 const NAV = [
   { group: "Overview", items: [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/billing", label: "Billing", icon: ReceiptText },
     { href: "/twin", label: "Digital Twin", icon: Network },
     { href: "/products", label: "Products", icon: ShoppingBasket },
   ]},
@@ -65,6 +68,7 @@ const NAV = [
     { href: "/recommendations", label: "Recommendations", icon: Sparkles },
   ]},
   { group: "Operations", items: [
+    { href: "/staff", label: "Staff", icon: UserCog },
     { href: "/data-center", label: "Data Center", icon: Database },
     { href: "/alerts", label: "Alert Center", icon: Bell },
     { href: "/reports", label: "Reports", icon: BarChart3 },

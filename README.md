@@ -17,6 +17,7 @@ customers and risk *before spending real money*.
 
 | Module | What it does |
 |---|---|
+| **Billing / POS** 🧾 | Create customer bills from the live catalog (cart, discount, UPI/cash/card, customer phone) → **PDF invoice** generated per bill, stock auto-decremented, and the day's real sales/orders/customers flow straight into the twin. Cancelling a bill reverses everything. New customers detected by first-seen phone number |
 | **Business Time Machine** 🕰 | Slide to any recorded date and **replay the business as it was**: trailing KPIs, cash curve, top sellers, plus deterministic explanations ("Revenue spiked +43% — inside the Holi window", "Milk had no sales for 5 days — likely stockout, ~100 lost units"). Ends with **Future News**: dated fictional headlines projected from your real forecast |
 | **AI CEO Mode** 👑 | A decision inbox: the twin proposes concrete actions (restock orders, price moves on inelastic categories, clearances, marketing boosts, spending deferrals) each with a **simulated ₹ impact** — approve to apply (price changes execute immediately), reject to silence for two weeks |
 | **Business Weather** ⛅ | The next 7–14 days as a weather report: Sales ☀️ from the ML forecast vs weekday baselines, Inventory ⛈ from live days-to-stockout, Cash 🌤 from projected daily net |

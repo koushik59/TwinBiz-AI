@@ -67,3 +67,6 @@ def ensure_indexes(db: Database) -> None:
     db.chat_messages.create_index([("business_id", ASCENDING), ("created_at", DESCENDING)])
     db.decisions.create_index([("business_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)])
     db.stock_snapshots.create_index([("business_id", ASCENDING), ("day", ASCENDING)], unique=True)
+    db.bills.create_index([("business_id", ASCENDING), ("created_at", DESCENDING)])
+    db.bills.create_index([("business_id", ASCENDING), ("customer_phone", ASCENDING)])
+    db.stock_adjustments.create_index([("business_id", ASCENDING), ("created_at", DESCENDING)])
