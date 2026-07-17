@@ -5,8 +5,9 @@ from pymongo.errors import DuplicateKeyError
 from .config import settings
 from .database import ensure_indexes, get_db
 from .models import Business, User, insert_model
-from .routers import (analytics, auth, business, data_center, experiments,
-                      insights_router, intel, products, simulate)
+from .routers import (analytics, auth, billing, business, data_center,
+                      experiments, insights_router, intel, products, simulate,
+                      staff)
 from .security import hash_password
 from .seed import seed_business
 
@@ -30,6 +31,8 @@ app.include_router(analytics.router)
 app.include_router(simulate.router)
 app.include_router(insights_router.router)
 app.include_router(intel.router)
+app.include_router(billing.router)
+app.include_router(staff.router)
 
 
 @app.get("/api/healthz")

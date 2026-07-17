@@ -1,6 +1,7 @@
 """Real product management: full CRUD with search / filter / sort / pagination (§6)."""
 
 import re
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
@@ -8,7 +9,8 @@ from pymongo import ASCENDING, DESCENDING
 from pymongo.database import Database
 
 from ..database import get_db, next_seq, oid
-from ..models import Business, Product, Supplier, find_models, get_owned, insert_model
+from ..models import (Business, Product, StockAdjustment, Supplier, effective_price,
+                      find_models, get_owned, insert_model, sale_active, to_dt)
 from ..security import get_current_business
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -61,6 +63,8 @@ class ProductIn(BaseModel):
 def _product_out(p: Product) -> dict:
     margin = round((p.price - p.cost) / p.price * 100, 1) if p.price else 0.0
     return {
+        "on_sale": sale_active(p), "effective_price": effective_price(p),
+        "sale_price": p.sale_price, "sale_ends": p.sale_ends.isoformat() if p.sale_ends else None,
         "id": p.id, "name": p.name, "sku": p.sku, "barcode": p.barcode, "brand": p.brand,
         "category": p.category, "subcategory": p.subcategory, "description": p.description,
         "unit_type": p.unit_type, "unit_size": p.unit_size,
@@ -129,6 +133,79 @@ def list_suppliers(business: Business = Depends(get_current_business), db: Datab
     rows = find_models(db, Supplier, {"business_id": business.id})
     return {"items": [{"id": s.id, "name": s.name, "category": s.category,
                        "lead_time_days": s.lead_time_days, "reliability": s.reliability} for s in rows]}
+
+
+@router.get("/stock-log")
+def stock_log(business: Business = Depends(get_current_business), db: Database = Depends(get_db)):
+    """Recent manual stock adjustments (audit trail)."""
+    rows = find_models(db, StockAdjustment, {"business_id": business.id},
+                       sort=[("created_at", -1)], limit=25)
+    return {"items": [{"id": a.id, "product_name": a.product_name, "delta": a.delta,
+                       "reason": a.reason, "note": a.note, "stock_after": a.stock_after,
+                       "created_at": a.created_at.isoformat()} for a in rows]}
+
+
+class StockAdjustIn(BaseModel):
+    delta: int  # +units received / -units removed
+    reason: str = "correction"  # delivery | damaged | expired | theft | correction
+    note: str = ""
+
+
+@router.post("/{product_id}/stock")
+def adjust_stock(product_id: str, body: StockAdjustIn,
+                 business: Business = Depends(get_current_business),
+                 db: Database = Depends(get_db)):
+    if body.delta == 0:
+        raise HTTPException(status_code=400, detail="Adjustment cannot be zero")
+    p = get_owned(db, Product, product_id, business.id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Product not found")
+    new_stock = p.stock + body.delta
+    if new_stock < 0:
+        raise HTTPException(status_code=400,
+                            detail=f"Cannot remove {-body.delta} units — only {p.stock} in stock")
+    db.products.update_one({"_id": oid(p.id)}, {"$set": {"stock": new_stock}})
+    reason = body.reason if body.reason in ("delivery", "damaged", "expired", "theft", "correction") else "correction"
+    insert_model(db, StockAdjustment(
+        business_id=business.id, product_id=p.id, product_name=p.name,
+        delta=body.delta, reason=reason, note=body.note.strip(), stock_after=new_stock))
+    return _product_out(p.model_copy(update={"stock": new_stock}))
+
+
+class SaleIn(BaseModel):
+    sale_price: float = Field(gt=0)
+    sale_ends: str | None = None  # ISO date; empty = until removed
+
+
+@router.put("/{product_id}/sale")
+def set_sale(product_id: str, body: SaleIn,
+             business: Business = Depends(get_current_business),
+             db: Database = Depends(get_db)):
+    p = get_owned(db, Product, product_id, business.id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Product not found")
+    ends = None
+    if body.sale_ends:
+        try:
+            ends = date.fromisoformat(body.sale_ends)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="sale_ends must be YYYY-MM-DD")
+        if ends < date.today():
+            raise HTTPException(status_code=400, detail="Sale end date is already in the past")
+    db.products.update_one({"_id": oid(p.id)}, {"$set": {
+        "sale_price": round(body.sale_price, 2),
+        "sale_ends": to_dt(ends) if ends else None}})
+    return _product_out(p.model_copy(update={"sale_price": round(body.sale_price, 2), "sale_ends": ends}))
+
+
+@router.delete("/{product_id}/sale")
+def clear_sale(product_id: str, business: Business = Depends(get_current_business),
+               db: Database = Depends(get_db)):
+    p = get_owned(db, Product, product_id, business.id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Product not found")
+    db.products.update_one({"_id": oid(p.id)}, {"$set": {"sale_price": None, "sale_ends": None}})
+    return _product_out(p.model_copy(update={"sale_price": None, "sale_ends": None}))
 
 
 @router.get("/{product_id}")

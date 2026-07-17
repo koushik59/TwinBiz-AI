@@ -6,8 +6,8 @@ from pydantic import BaseModel
 from pymongo.database import Database
 
 from ..database import get_db, oid
-from ..models import (Business, DailyMetric, Product, Scenario, find_models,
-                      get_owned, insert_model, to_dt)
+from ..models import (Business, DailyMetric, Product, Scenario, effective_price,
+                      find_models, get_owned, insert_model, sale_active, to_dt)
 from ..security import get_current_business
 from ..services.forecasting import forecast_series, restock_predictions
 from ..services.simulation import (MODEL_VERSION, PRICE_ELASTICITY, WHAT_IF_PRESETS,
@@ -101,10 +101,13 @@ def simulate_product_price(body: ProductPriceIn, business: Business = Depends(ge
 @router.get("/products")
 def simulatable_products(business: Business = Depends(get_current_business),
                          db: Database = Depends(get_db)):
-    """Product list for the simulator's product-price mode."""
+    """Product list for the simulator's product-price mode and the billing picker.
+    `price` is what a customer pays right now (the sale price while one is active)."""
     rows = find_models(db, Product, {"business_id": business.id}, sort=[("name", 1)])
     return {"items": [{"id": p.id, "name": p.name, "category": p.category,
-                       "price": p.price, "cost": p.cost, "stock": p.stock} for p in rows]}
+                       "price": effective_price(p), "base_price": p.price,
+                       "on_sale": sale_active(p), "cost": p.cost, "stock": p.stock}
+                      for p in rows]}
 
 
 @router.post("/run")
