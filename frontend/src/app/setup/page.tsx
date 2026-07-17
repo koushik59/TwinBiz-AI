@@ -8,7 +8,7 @@ import { Building2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-const TYPES = ["Supermarket", "Retail", "Restaurant", "Pharmacy", "Salon", "Bakery", "Warehouse", "Manufacturing", "Education"];
+const TYPES = ["Supermarket", "Retail", "Restaurant", "Pharmacy", "Bakery", "Warehouse", "Manufacturing"];
 
 export default function SetupPage() {
   const router = useRouter();

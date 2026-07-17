@@ -1,5 +1,6 @@
 "use client";
 
+import { GoogleAuthButton } from "@/components/google-auth";
 import { Logo } from "@/components/shell";
 import { Button, Card, Input, Label, useToast } from "@/components/ui";
 import { api, setToken } from "@/lib/api";
@@ -50,6 +51,7 @@ export default function RegisterPage() {
             </div>
             <Button className="w-full" disabled={loading}>{loading ? "Creating…" : "Create account"}</Button>
           </form>
+          <GoogleAuthButton />
           <p className="mt-4 text-center text-xs text-muted">
             Already registered?{" "}
             <Link href="/login" className="font-semibold text-brand hover:underline">Sign in</Link>

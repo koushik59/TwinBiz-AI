@@ -7,12 +7,15 @@ import {
   ArrowRight,
   Bot,
   Boxes,
+  Eye,
   FlaskConical,
   GitCompareArrows,
+  HeartHandshake,
   LineChart,
   Quote,
   ShieldAlert,
   Sparkles,
+  Target,
   TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
@@ -68,7 +71,7 @@ const STEPS = [
 
 const TESTIMONIALS = [
   { quote: "I tested a ₹2 price increase on milk in the simulator first. It predicted the dip in footfall almost exactly — and saved my margin.", name: "Ramesh Gupta", role: "Supermarket owner, Hyderabad" },
-  { quote: "The advisor told me hiring one more stylist would pay for itself in 6 weeks. It took 5.", name: "Priya Nair", role: "Salon owner, Kochi" },
+  { quote: "The advisor told me hiring one more baker would pay for itself in 6 weeks. It took 5.", name: "Priya Nair", role: "Bakery owner, Kochi" },
   { quote: "Stockout alerts alone stopped us losing weekend sales on our top 10 SKUs.", name: "Arjun Mehta", role: "Pharmacy chain, Pune" },
 ];
 
@@ -89,6 +92,7 @@ export default function Landing() {
           <nav className="hidden items-center gap-6 text-sm text-ink-2 md:flex">
             <a href="#features" className="hover:text-ink transition-colors">Features</a>
             <a href="#how" className="hover:text-ink transition-colors">How it works</a>
+            <a href="#about" className="hover:text-ink transition-colors">About us</a>
           </nav>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -201,6 +205,55 @@ export default function Landing() {
             ))}
           </div>
         </div>
+      </section>
+
+      {/* about us */}
+      <section id="about" className="mx-auto max-w-6xl px-4 py-20">
+        <motion.div {...fadeUp} className="text-center">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand-soft px-3 py-1 text-xs font-semibold text-brand">
+            <HeartHandshake size={13} /> About us
+          </span>
+          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+            Big-company intelligence, <span className="gradient-text">corner-shop simple.</span>
+          </h2>
+          <p className="mx-auto mt-4 max-w-3xl leading-relaxed text-ink-2">
+            India runs on millions of small businesses — supermarkets, kiranas, restaurants, pharmacies —
+            and every one of them makes high-stakes decisions on gut feeling alone. Enterprises have
+            analysts, dashboards and simulations; the shop owner gets a notebook and a prayer.
+            <strong className="text-ink"> We built TwinBiz AI to close that gap.</strong>
+          </p>
+        </motion.div>
+
+        <div className="mt-12 grid gap-5 md:grid-cols-3">
+          {[
+            {
+              icon: Target,
+              title: "Our goal",
+              desc: "Make decision intelligence — the kind only large enterprises could afford — available to every small business owner, in plain language, at kirana-scale prices. No analysts required, no jargon, just answers.",
+            },
+            {
+              icon: Eye,
+              title: "Our vision",
+              desc: "A future where no shop owner loses a season to a guessable mistake. Every price change, every hire, every product launch tested in a digital twin first — so mistakes stay virtual and profits stay real.",
+            },
+            {
+              icon: HeartHandshake,
+              title: "What we promise",
+              desc: "Honest AI. Every prediction shows its reasoning, its assumptions and a confidence score — always labeled “Predicted, not guaranteed.” Demo data is never passed off as real, and nothing changes without your approval.",
+            },
+          ].map((v, i) => (
+            <motion.div key={v.title} {...fadeUp} transition={{ ...fadeUp.transition, delay: i * 0.08 }} className="glass rounded-2xl p-6">
+              <div className="inline-flex rounded-xl bg-brand-soft p-3 text-brand"><v.icon size={20} /></div>
+              <h3 className="mt-4 font-semibold">{v.title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-ink-2">{v.desc}</p>
+            </motion.div>
+          ))}
+        </div>
+
+        <motion.p {...fadeUp} className="mx-auto mt-10 max-w-2xl text-center text-sm italic leading-relaxed text-muted">
+          &ldquo;Pilots train on flight simulators. Banks stress-test on models. We believe the corner
+          store — the riskiest business of all — deserves the same superpower.&rdquo;
+        </motion.p>
       </section>
 
       {/* testimonials */}
